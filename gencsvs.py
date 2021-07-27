@@ -449,14 +449,12 @@ class CurveWokNominal(FlatWokNominal):
         d["col"] = fc.col
         d["row"] = fc.row
 
-
         df = pd.DataFrame(d)
         self.fiducialCoords = df.reset_index()
 
     def genPositionerTable(self):
         # this one doesn't change!
         super().genPositionerTable()
-
 
     def genWokCoords(self):
 
@@ -486,8 +484,109 @@ class CurveWokNominal(FlatWokNominal):
         self.wokCoords = df.reset_index()
 
 
+class CurveWokNominalAPO(CurveWokNominal):
+
+    def __init__(self):
+        super().__init__("APO")
+
+
+class CurveWokNominalLCO(CurveWokNominal):
+
+    def __init__(self):
+        super().__init__("LCO")
+
+#####################  hexagon cmm meas ###########################
+class CMMFiducialMeasTable(object):
+
+    def __init__(self, filename):
+        df = pd.read_excel(filename)
+        df = df.rename(columns={
+            "WokPosition": "holeID", "FIF_SN": "id",
+            "Xcore": "xWok", "Ycore": "yWok", "Ztactile": "zWok"
+        })
+
+        _col = []
+        _row = []
+        for holeID in df.holeID:
+            if holeID.startswith("F"):
+                _col.append(None)
+                _row.append(None)
+                continue
+
+            x = holeID.strip("R")
+            x = x.strip("+")
+            r, c = x.split("C")
+            _col.append(int(c))
+            _row.append(int(r))
+
+        df["row"] = _row
+        df["col"] = _col
+
+        df = df[["id", "xWok", "yWok", "zWok", "holeID", "col", "row"]]
+        self.fiducialTable = df.reset_index()
+
+
+class CMMFiducialNomTable(object):
+
+    def __init__(self, filename):
+        df = pd.read_excel(filename)
+        df = df.rename(columns={
+            "WokPosition": "holeID", "FIF_SN": "id",
+            "Xnominal": "xWok", "Ynominal": "yWok", "Znominal": "zWok"
+        })
+
+        _col = []
+        _row = []
+        for holeID in df.holeID:
+            if holeID.startswith("F"):
+                _col.append(None)
+                _row.append(None)
+                continue
+
+            x = holeID.strip("R")
+            x = x.strip("+")
+            r, c = x.split("C")
+            _col.append(int(c))
+            _row.append(int(r))
+
+        df["row"] = _row
+        df["col"] = _col
+
+        df = df[["id", "xWok", "yWok", "zWok", "holeID", "col", "row"]]
+        self.fiducialTable = df.reset_index()
+
+
+class CMMFiducialMeasAPO(CMMFiducialMeasTable):
+    def __init__(self):
+        super().__init__("FPS_Sloan_CMM_20210504.xlsx")
+
+
+class CMMFiducialNomAPO(CMMFiducialNomTable):
+    def __init__(self):
+        super().__init__("FPS_Sloan_CMM_20210504.xlsx")
+
+
+class CMMFiducialMeasLCO(CMMFiducialMeasTable):
+    def __init__(self):
+        super().__init__("FPS_DuPont_CMM_20210504.xlsx")
+
+
+class CMMFiducialNomLCO(CMMFiducialNomTable):
+    def __init__(self):
+        super().__init__("FPS_DuPont_CMM_20210504.xlsx")
+
+
+class Assignment(object):
+
+    def __init__(self, assignmentFile):
+        df = pd.read_csv(assignmentFile)
+        import pdb; pdb.set_trace()
+
 if __name__ == "__main__":
-    fwn = CurveWokNominal("LCO")
+    fwn = CMMFiducialMeasAPO()
+    fwn = CMMFiducialNomAPO()
+    fwn = CMMFiducialMeasLCO()
+    fwn = CMMFiducialNomLCO()
     import pdb; pdb.set_trace()
 
 
