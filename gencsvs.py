@@ -582,12 +582,45 @@ class Assignment(object):
         df = pd.read_csv(assignmentFile)
         import pdb; pdb.set_trace()
 
+
+def assign(csvObj, assignmentFile, cmmMeasObj=None):
+    if cmmMeasObj is not None:
+        csvObj.fiducialTable = cmmMeasObj.fiducialTable
+
+    df = pd.read_csv(assignmentFile)
+
+    for ii, row in df.iterrows():
+        devID = row.Device
+        if devID.startswith("P"):
+            pid = int(devID.strip("P"))
+            holeID = row.Row + row.Column
+
+            # before = csvObj.positionerTable[csvObj.positionerTable.holeID==holeID].positionerID
+            # print("before", before)
+
+            csvObj.positionerTable.loc[(csvObj.positionerTable.holeID == holeID),'positionerID']= pid
+
+            # after = csvObj.positionerTable[csvObj.positionerTable.holeID==holeID].positionerID
+            # print("after", after)
+
+    return csvObj
+
+class AssignmentAPO(Assignment):
+
+    def __init__(self):
+        super().__init__("SloanFPS_HexArray_2021July23.csv")
+
 if __name__ == "__main__":
-    fwn = CMMFiducialMeasAPO()
-    fwn = CMMFiducialNomAPO()
-    fwn = CMMFiducialMeasLCO()
-    fwn = CMMFiducialNomLCO()
-    import pdb; pdb.set_trace()
+    csvObj = FlatWokNominal()
+    apoCSV = assign(csvObj, "SloanFPS_HexArray_2021July23.csv")
+    apoCSV.write("/users/csayres/wokCalib/sloanFlatNom")
+
+    csvObj = CurveWokNominalAPO()
+    cmmFid = CMMFiducialMeasAPO()
+    apoCSV = assign(csvObj, "SloanFPS_HexArray_2021July23.csv", cmmFid)
+    apoCSV.write("/users/csayres/wokCalib/sloanCurveCMM")
+
+
 
 
 # import pdb; pdb.set_trace()
