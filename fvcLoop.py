@@ -1,7 +1,9 @@
 import asyncio
+import os
 import numpy
 import datetime
 from astropy.io import fits
+import pandas as pd
 
 from jaeger import FPS, log
 from kaiju.robotGrid import RobotGridCalib
@@ -36,16 +38,78 @@ rg = RobotGridCalib(angStep, collisionBuffer, epsilon, seed)
 cam = None
 led_state = None
 
+
+async def exposeFVC(exptime, stack=1):
+    cmdID = 9999
+    cmdStr = "%i talk expose %.4f --stack %i\n"%(cmdID, exptime, stack)
+    reader, writer = await asyncio.open_connection(
+        'localhost', 19996)
+
+    while True:
+        data = await reader.readline()
+        data = data.decode()
+        print(data)
+        if "version=" in data:
+            print("break!")
+            break
+
+    print(f'Send: %s'%cmdStr)
+    writer.write(cmdStr.encode())
+    await writer.drain()
+    while True:
+        data = await reader.read(100)
+        data = data.decode()
+        print(data)
+        if "filename=" in data:
+            filename = data.split(",")[-1].strip("\n")
+        if "%i : "%cmdID in data:
+            print("command finished!")
+            break
+
+    print("filename: ", filename)
+
+    print('Close the connection')
+    writer.close()
+    await writer.wait_closed()
+
+    hdus = fits.open(filename)
+    print(hdus[1].data.shape)
+    return filename
+
+
+def dataFrameToFitsRecord(df):
+    df = df.copy()
+    _dtypes = df.dtypes.to_dict()
+    column_dtypes = {}
+    for colName, dtype in _dtypes.items():
+        dtypeStr = dtype.name
+        print("colName", colName)
+        if "Unnamed" in colName:
+            df.drop(colName, axis=1, inplace=True)
+            continue
+        if colName == "index":
+            df.drop(colName, axis=1, inplace=True)
+            continue
+
+        if dtypeStr == "object":
+            dtypeStr = "a20"
+        column_dtypes[colName] = dtypeStr
+    rec = df.to_records(index=False, column_dtypes=column_dtypes)
+    return rec
+
+
 def _getTemps(fps):
     return {"temp1":1, "temp2":2, "temp3":3}
 
-def appendFitsData(filePath, fps):
+
+def appendDataToFits(filePath, fps):
     d, oldname = os.path.split(filePath)
     newpath = os.path.join(d, "proc-" + oldname)
     f = fits.open(filePath)
 
     for tab in [positionerTableCalib, wokCoordsCalib, fiducialCoordsCalib]:
         pass
+
 
 async def getTemps(fps):
     # wok center metal temp
@@ -57,7 +121,8 @@ async def getTemps(fps):
     # fps air above wok center
     rtd3_dev_temp = (await fps.ieb.read_device("rtd3"))[0]
 
-async def ledOn(fps, ledpower = LED_VALUE):
+
+async def ledOn(fps, ledpower=LED_VALUE):
     global led_state
     led_state = ledpower
 
@@ -65,11 +130,13 @@ async def ledOn(fps, ledpower = LED_VALUE):
     device = fps.ieb.get_device("led1")
     await device.write(on_value)
 
+
 async def ledOff(fps):
     global led_state
     led_state = 0
     device = fps.ieb.get_device("led1")
     await device.write(0)
+
 
 async def openCamera():
     global cam
@@ -78,10 +145,9 @@ async def openCamera():
     sids = bcs.list_available_cameras()
     cam = await bcs.add_camera(uid=sids[camID], autoconnect=True)
 
+
 async def expose():
-
     global cam
-
     tnow = datetime.datetime.now().isoformat()
     expname = tnow + ".fits"
     exp = await cam.expose(exptime * 1e-6, stack=nAvgImg, filename=expname)
@@ -89,19 +155,40 @@ async def expose():
     print("wrote %s"%expname, "max counts", numpy.max(exp.data))
     return expname
 
-async def updateCurrentPos(fps):
+
+async def updateCurrentPos(fps, setKaiju=False):
     """Update kaiju's robot grid to reflect the current
     state as reported by the fps
     """
+    _posID = []
+    _alphaReport = []
+    _betaReport = []
     for r in rg.robotDict.values():
         await fps.positioners[r.id].update_position()
         alpha, beta = fps.positioners[r.id].position
-        r.setAlphaBeta(alpha, beta)
-        r.setDestinationAlphaBeta(alphaHome, betaHome)
+        _posID.append(r.id)
+        _alphaReport.append(alpha)
+        _betaReport.append(beta)
+        if setKaiju:
+            r.setAlphaBeta(alpha, beta)
+            r.setDestinationAlphaBeta(alphaHome, betaHome)
 
-    for r in rg.robotDict.values():
-        if rg.isCollided(r.id):
-            print("robot ", r.id, " is collided")
+    if setKaiju:
+        for r in rg.robotDict.values():
+            if rg.isCollided(r.id):
+                print("robot ", r.id, " is collided")
+
+    currPos = pd.DataFrame(
+        {
+            "positionerID": _posID,
+            "alphaReport": _alphaReport,
+            "betaReport": _betaReport
+        }
+    )
+
+    return currPos
+
+
 
 
 async def separate(fps):
