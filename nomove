@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+import asyncio
+import os
+import numpy
+import datetime
+from astropy.io import fits
+import pandas as pd
+import sys
+import json
+
+from jaeger import FPS, log
+# log.sh.setLevel(5)
+from coordio.defaults import positionerTableCalib, wokCoordsCalib, fiducialCoordsCalib
+# from baslerCam import BaslerCamera, BaslerCameraSystem, config
+
+# exptime = 1.2
+# CONTINUOUS = False
+UNWINDONLY = False
+TAKE_IMGS = False
+LED_VALUE = 0.5
+
+
+# cam = None
+# led_state = None
+
+
+async def exposeFVC(exptime):
+    cmdID = 9999
+    cmdStr = "%i expose %.4f\n"%(cmdID, exptime)
+    reader, writer = await asyncio.open_connection(
+        'sdss-fvc', 19995)
+
+
+    await asyncio.sleep(1)
+
+    # while True:
+    #     data = await reader.readline()
+    #     data = data.decode()
+    #     print(data)
+    #     if "version=" in data:
+    #         print("break!")
+    #         break
+
+    print(f'Send: %s'%cmdStr)
+    writer.write(cmdStr.encode())
+    await writer.drain()
+    while True:
+        data = await reader.readline()
+        data = json.loads(data.decode())
+        print(data)
+        if "filename" in data["data"]:
+            filename = data["data"]["filename"]["filename"]
+        if data["header"]["message_code"] == ":":
+            print("exp command command finished!")
+            break
+
+    print("filename: ", filename)
+
+    print('Close the connection')
+    writer.close()
+    await writer.wait_closed()
+
+    hdus = fits.open(filename)
+    print("exptime", exptime, "max counts", numpy.max(hdus[1].data))
+    return filename
+
+
+def dataFrameToFitsRecord(df):
+    df = df.copy()
+    _dtypes = df.dtypes.to_dict()
+    column_dtypes = {}
+    for colName, dtype in _dtypes.items():
+        dtypeStr = dtype.name
+        if "Unnamed" in colName:
+            df.drop(colName, axis=1, inplace=True)
+            continue
+        if colName == "index":
+            df.drop(colName, axis=1, inplace=True)
+            continue
+
+        if dtypeStr == "object":
+            dtypeStr = "a20"
+        column_dtypes[colName] = dtypeStr
+    rec = df.to_records(index=False, column_dtypes=column_dtypes)
+    return rec
+
+
+# def _getTemps(fps):
+#     return {"temp1":1, "temp2":2, "temp3":3}
+
+
+async def appendDataToFits(filePath, fps, comment):
+    d, oldname = os.path.split(filePath)
+    newpath = os.path.join(d, "nomove-" + oldname)
+    f = fits.open(filePath)
+    # invert columns
+
+    f[1].data = f[1].data[:,::-1]
+
+    tables = [
+        ("positionerTable", positionerTableCalib),
+        ("wokCoords", wokCoordsCalib),
+        ("fiducialCoords", fiducialCoordsCalib)
+    ]
+
+    for name, tab in tables:
+        rec = dataFrameToFitsRecord(tab)
+        binTable = fits.BinTableHDU(rec, name=name)
+        f.append(binTable)
+
+    addHeaders = await getIEBData(fps)
+    hdr = f[1].header
+    for key, val in addHeaders.items():
+        hdr[key] = val
+
+    hdr["EXPNOTE"] = str(comment)
+
+    currPos = await updateCurrentPos(fps)
+    _cmdAlpha = []
+    _cmdBeta = []
+    _startAlpha = []
+    _startBeta = []
+
+    rec = dataFrameToFitsRecord(currPos)
+
+    binTable = fits.BinTableHDU(rec, name="posAngles")
+
+    f.append(binTable)
+
+    f.writeto(newpath, checksum=True)
+    print("wrote", newpath)
+
+
+async def getIEBData(fps):
+    # wok center metal temp
+    addHeaders = {}
+    addHeaders["TEMPRTD2"] = (await fps.ieb.read_device("rtd2"))[0]
+    # outer wok inside air temp
+    addHeaders["TEMPT3"] = (await fps.ieb.read_device("t3"))[0]
+
+    # fps air above wok center
+    addHeaders["TEMPRTD3"] = (await fps.ieb.read_device("rtd3"))[0]
+
+    addHeaders["LED1"] = (await fps.ieb.read_device("led1"))[0]
+    addHeaders["LED2"] = (await fps.ieb.read_device("led2"))[0]
+
+    return addHeaders
+
+
+async def ledOn(fps, ledpower=LED_VALUE):
+    led_state = ledpower
+
+    on_value = 32 * int(1023 * (ledpower) / 100)
+    for dev in ["led1", "led2"]:
+        print(dev, "on")
+        device = fps.ieb.get_device(dev)
+        await device.write(on_value)
+
+
+async def ledOff(fps):
+    led_state = 0
+    for dev in ["led1", "led2"]:
+        print(dev, "off")
+        device = fps.ieb.get_device(dev)
+        await device.write(0)
+
+
+async def updateCurrentPos(fps):
+    """Update kaiju's robot grid to reflect the current
+    state as reported by the fps
+    """
+    _posID = []
+    _alphaReport = []
+    _betaReport = []
+    for posID, robot in fps.positioners.items():
+        await robot.update_position()
+        alpha, beta = robot.position
+        _posID.append(posID)
+        _alphaReport.append(alpha)
+        _betaReport.append(beta)
+
+
+    currPos = pd.DataFrame(
+        {
+            "positionerID": _posID,
+            "alphaReport": _alphaReport,
+            "betaReport": _betaReport
+        }
+    )
+
+    return currPos
+
+
+
+async def main(comment):
+
+    fps = FPS()
+    await fps.initialise()
+
+    await ledOn(fps)
+    await asyncio.sleep(1)
+    nRepeat = 7
+    exptimes = [1.2, 10]
+    for exptime in exptimes:
+        print("exptime", exptime)
+        for ii in range(7):
+            print("iter", ii)
+            await asyncio.sleep(2)
+            filename = await exposeFVC(exptime)
+            await appendDataToFits(filename, fps, comment)
+
+
+
+
+    await fps.shutdown()
+
+
+if __name__ == "__main__":
+    args = sys.argv
+    if len(args) > 1:
+        comment = " ".join([str(x) for x in args[1:]])
+    else:
+        comment = ""
+    asyncio.run(main(comment))

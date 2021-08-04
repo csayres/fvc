@@ -4,6 +4,7 @@ import numpy
 import datetime
 from astropy.io import fits
 import pandas as pd
+import pickle
 
 from jaeger import FPS, log
 # log.sh.setLevel(5)
@@ -22,7 +23,7 @@ exptime = 1.2
 # CONTINUOUS = False
 UNWINDONLY = False
 TAKE_IMGS = False
-LED_VALUE = 1
+LED_VALUE = 100
 alphaHome = 0
 betaHome = 180
 seed = None
@@ -65,18 +66,10 @@ def getGrid(seed):
     rg.robotDict[474].setAlphaBeta(0, 180)
     rg.robotDict[474].setDestinationAlphaBeta(0, 180)
     rg.robotDict[474].isOffline = True
-    rg.robotDict[769].setAlphaBeta(45, 180)
-    rg.robotDict[769].setDestinationAlphaBeta(45, 180)
-    rg.robotDict[769].isOffline = True
-    rg.robotDict[652].setAlphaBeta(0, 180)
-    rg.robotDict[652].setDestinationAlphaBeta(0, 180)
-    rg.robotDict[652].isOffline = True
-    rg.robotDict[703].setAlphaBeta(0, 180)
-    rg.robotDict[703].setDestinationAlphaBeta(0, 180)
-    rg.robotDict[703].isOffline = True
-    # rg.robotDict[769].setAlphaBeta(0, 180)
-    # rg.robotDict[769].setDestinationAlphaBeta(0, 180)
-    # rg.robotDict[769].isOffline = True
+    rg.robotDict[646].setAlphaBeta(270, 180)
+    rg.robotDict[646].setDestinationAlphaBeta(270, 180)
+    rg.robotDict[646].isOffline = True
+
     return rg
 
 # cam = None
@@ -330,6 +323,8 @@ async def outAndBackSafe(fps, seed):
     forwardPath, reversePath = rg.getRandomPathPair(
         alphaHome=alphaHome, betaHome=betaHome, betaLim=[165, 195]
     )
+    with open("demopaths.pkl", "wb") as pic:
+        pickle.dump((forwardPath, reversePath), pic)
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
     #for r in rg.robotDict.values():
@@ -339,14 +334,15 @@ async def outAndBackSafe(fps, seed):
         print("sending forward path")
         await fps.send_trajectory(forwardPath, use_sync_line=False)
         print("forward path done")
-        await ledOn(fps)
+        # await ledOn(fps)
         await asyncio.sleep(1)
-        filename = await exposeFVC(exptime)
-        await appendDataToFits(filename, fps, rg, seed)
-        await ledOff(fps)
+        # filename = await exposeFVC(exptime)
+        # await appendDataToFits(filename, fps, rg, seed)
+        # await ledOff(fps)
 
         print("sending reverse path")
         await fps.send_trajectory(reversePath, use_sync_line=False)
+        # await expose()
     else:
         print("not sending path")
 
@@ -385,22 +381,25 @@ async def main():
     # filename = await exposeFVC(exptime)
     # await asyncio.sleep(2)
     # await appendDataToFits(filename, fps)
+    with open("demopaths.pkl", "rb") as pic:
+        forwardPath, reversePath = pickle.load(pic)
+
+    del forwardPath[646]
+    del reversePath[646]
+
+    await ledOn(fps)
     print("unwind")
     await unwindGrid(fps)
-
-    if UNWINDONLY:
-        await fps.shutdown()
-        return
-    print("unwound")
-
-
-
-    for ii in range(100):
-        seed += 1
-        print("\n\niter %i\n\n"%ii)
-        await outAndBackSafe(fps, seed)
-
-
+    await asyncio.sleep(2)
+    print("forward going")
+    await fps.send_trajectory(forwardPath, use_sync_line=False)
+    print("forward done")
+    await asyncio.sleep(5)
+    print("reverse going")
+    await fps.send_trajectory(reversePath, use_sync_line=False)
+    print("reverse done")
+    await asyncio.sleep(5)
+    await ledOff(fps)
     await fps.shutdown()
 
 
