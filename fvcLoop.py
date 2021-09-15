@@ -4,6 +4,8 @@ import numpy
 import datetime
 from astropy.io import fits
 import pandas as pd
+import pickle
+import datetime
 
 from jaeger import FPS, log
 # log.sh.setLevel(5)
@@ -31,53 +33,54 @@ escapeDeg = 20 # 20 degrees of motion to escape
 # globals
 def getGrid(seed):
     rg = RobotGridCalib(angStep, collisionBuffer, epsilon, seed)
-
-    rg.robotDict[1255].setAlphaBeta(305, 238.29)
-    rg.robotDict[1255].setDestinationAlphaBeta(305, 238.29)
-    rg.robotDict[1255].isOffline = True
-    rg.robotDict[717].setAlphaBeta(0,180)
-    rg.robotDict[717].setDestinationAlphaBeta(0,180)
-    rg.robotDict[717].isOffline = True
-    rg.robotDict[1367].setAlphaBeta(0, 164.88)
-    rg.robotDict[1367].setDestinationAlphaBeta(0, 164.88)
-    rg.robotDict[1367].isOffline = True
-    rg.robotDict[398].setAlphaBeta(0, 152.45)
-    rg.robotDict[398].setDestinationAlphaBeta(0, 152.45)
-    rg.robotDict[398].isOffline = True
-    rg.robotDict[775].setAlphaBeta(0, 180)
-    rg.robotDict[775].setDestinationAlphaBeta(0, 180)
-    rg.robotDict[775].isOffline = True
-    rg.robotDict[738].setAlphaBeta(0, 179.8121)
-    rg.robotDict[738].setDestinationAlphaBeta(0, 179.8121)
-    rg.robotDict[738].isOffline = True
-    rg.robotDict[1003].setAlphaBeta(0, 180.0502)
-    rg.robotDict[1003].setDestinationAlphaBeta(0, 180.0502)
-    rg.robotDict[1003].isOffline = True
-    rg.robotDict[981].setAlphaBeta(0, 179.7738)
-    rg.robotDict[981].setDestinationAlphaBeta(0, 179.7738)
-    rg.robotDict[981].isOffline = True
-    rg.robotDict[545].setAlphaBeta(5.5527, 180.2876)
-    rg.robotDict[545].setDestinationAlphaBeta(5.5527, 180.2876)
-    rg.robotDict[545].isOffline = True
-    rg.robotDict[688].setAlphaBeta(0.0129, 180.8187)
-    rg.robotDict[688].setDestinationAlphaBeta(0.0129, 180.8187)
-    rg.robotDict[688].isOffline = True
-    rg.robotDict[474].setAlphaBeta(0, 180)
-    rg.robotDict[474].setDestinationAlphaBeta(0, 180)
-    rg.robotDict[474].isOffline = True
-    rg.robotDict[769].setAlphaBeta(45, 180)
-    rg.robotDict[769].setDestinationAlphaBeta(45, 180)
-    rg.robotDict[769].isOffline = True
-    rg.robotDict[652].setAlphaBeta(0, 180)
-    rg.robotDict[652].setDestinationAlphaBeta(0, 180)
-    rg.robotDict[652].isOffline = True
-    rg.robotDict[703].setAlphaBeta(0, 180)
-    rg.robotDict[703].setDestinationAlphaBeta(0, 180)
-    rg.robotDict[703].isOffline = True
-    # rg.robotDict[769].setAlphaBeta(0, 180)
-    # rg.robotDict[769].setDestinationAlphaBeta(0, 180)
-    # rg.robotDict[769].isOffline = True
     return rg
+
+    # rg.robotDict[1255].setAlphaBeta(305, 238.29)
+    # rg.robotDict[1255].setDestinationAlphaBeta(305, 238.29)
+    # rg.robotDict[1255].isOffline = True
+    # rg.robotDict[717].setAlphaBeta(0,180)
+    # rg.robotDict[717].setDestinationAlphaBeta(0,180)
+    # rg.robotDict[717].isOffline = True
+    # rg.robotDict[1367].setAlphaBeta(0, 164.88)
+    # rg.robotDict[1367].setDestinationAlphaBeta(0, 164.88)
+    # rg.robotDict[1367].isOffline = True
+    # rg.robotDict[398].setAlphaBeta(0, 152.45)
+    # rg.robotDict[398].setDestinationAlphaBeta(0, 152.45)
+    # rg.robotDict[398].isOffline = True
+    # rg.robotDict[775].setAlphaBeta(0, 180)
+    # rg.robotDict[775].setDestinationAlphaBeta(0, 180)
+    # rg.robotDict[775].isOffline = True
+    # rg.robotDict[738].setAlphaBeta(0, 179.8121)
+    # rg.robotDict[738].setDestinationAlphaBeta(0, 179.8121)
+    # rg.robotDict[738].isOffline = True
+    # rg.robotDict[1003].setAlphaBeta(0, 180.0502)
+    # rg.robotDict[1003].setDestinationAlphaBeta(0, 180.0502)
+    # rg.robotDict[1003].isOffline = True
+    # rg.robotDict[981].setAlphaBeta(0, 179.7738)
+    # rg.robotDict[981].setDestinationAlphaBeta(0, 179.7738)
+    # rg.robotDict[981].isOffline = True
+    # rg.robotDict[545].setAlphaBeta(5.5527, 180.2876)
+    # rg.robotDict[545].setDestinationAlphaBeta(5.5527, 180.2876)
+    # rg.robotDict[545].isOffline = True
+    # rg.robotDict[688].setAlphaBeta(0.0129, 180.8187)
+    # rg.robotDict[688].setDestinationAlphaBeta(0.0129, 180.8187)
+    # rg.robotDict[688].isOffline = True
+    # rg.robotDict[474].setAlphaBeta(0, 180)
+    # rg.robotDict[474].setDestinationAlphaBeta(0, 180)
+    # rg.robotDict[474].isOffline = True
+    # rg.robotDict[769].setAlphaBeta(45, 180)
+    # rg.robotDict[769].setDestinationAlphaBeta(45, 180)
+    # rg.robotDict[769].isOffline = True
+    # rg.robotDict[652].setAlphaBeta(0, 180)
+    # rg.robotDict[652].setDestinationAlphaBeta(0, 180)
+    # rg.robotDict[652].isOffline = True
+    # rg.robotDict[703].setAlphaBeta(0, 180)
+    # rg.robotDict[703].setDestinationAlphaBeta(0, 180)
+    # rg.robotDict[703].isOffline = True
+    # # rg.robotDict[769].setAlphaBeta(0, 180)
+    # # rg.robotDict[769].setDestinationAlphaBeta(0, 180)
+    # # rg.robotDict[769].isOffline = True
+    # return rg
 
 # cam = None
 # led_state = None
@@ -321,6 +324,12 @@ async def unwindGrid(fps):
     # print(reversePath)
     await fps.send_trajectory(reversePath, use_sync_line=False)
 
+def writePath(pathdict, direction, seed):
+    tnow = datetime.datetime.now().isoformat()
+    fname = tnow + "_%s_%i.pkl"%(direction, seed)
+    with open (fname, "wb") as f:
+        pickle.dump(pathdict, f)
+
 
 async def outAndBackSafe(fps, seed):
     """Move robots out and back on non-colliding trajectories
@@ -337,15 +346,17 @@ async def outAndBackSafe(fps, seed):
 
     if not rg.didFail and rg.smoothCollisions == 0:
         print("sending forward path")
+        writePath(forwardPath, "forward", seed)
         await fps.send_trajectory(forwardPath, use_sync_line=False)
         print("forward path done")
-        await ledOn(fps)
+        # await ledOn(fps)
         await asyncio.sleep(1)
-        filename = await exposeFVC(exptime)
-        await appendDataToFits(filename, fps, rg, seed)
-        await ledOff(fps)
+        # filename = await exposeFVC(exptime)
+        # await appendDataToFits(filename, fps, rg, seed)
+        # await ledOff(fps)
 
         print("sending reverse path")
+        writePath(reversePath, "reverse", seed)
         await fps.send_trajectory(reversePath, use_sync_line=False)
     else:
         print("not sending path")
@@ -395,7 +406,10 @@ async def main():
 
 
 
-    for ii in range(100):
+    # for ii in range(100):
+    ii = 0
+    while True:
+        ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
         await outAndBackSafe(fps, seed)
