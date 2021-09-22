@@ -27,6 +27,14 @@ class CSVBuilder(object):
         self.genPositionerTable()
         self.genWokCoords()
 
+        # get rid of index columns if they exist
+        if "index" in self.positionerTable.columns:
+            self.positionerTable.drop(columns=["index"], inplace=True)
+        if "index" in self.wokCoords.columns:
+            self.wokCoords.drop(columns=["index"], inplace=True)
+        if "index" in self.fiducialCoords.columns:
+            self.fiducialCoords.drop(columns=["index"], inplace=True)
+
     def write(self, outdir):
         self.fiducialCoords.to_csv(os.path.join(outdir, "fiducialCoords.csv"))
         self.wokCoords.to_csv(os.path.join(outdir, "wokCoords.csv"))
@@ -496,131 +504,136 @@ class CurveWokNominalLCO(CurveWokNominal):
         super().__init__("LCO")
 
 #####################  hexagon cmm meas ###########################
-class CMMFiducialMeasTable(object):
-
-    def __init__(self, filename):
-        df = pd.read_excel(filename)
-        df = df.rename(columns={
-            "WokPosition": "holeID", "FIF_SN": "id",
-            "Xcore": "xWok", "Ycore": "yWok", "Ztactile": "zWok"
-        })
-
-        _col = []
-        _row = []
-        for holeID in df.holeID:
-            if holeID.startswith("F"):
-                _col.append(None)
-                _row.append(None)
-                continue
-
-            x = holeID.strip("R")
-            x = x.strip("+")
-            r, c = x.split("C")
-            _col.append(int(c))
-            _row.append(int(r))
-
-        df["row"] = _row
-        df["col"] = _col
-
-        df = df[["id", "xWok", "yWok", "zWok", "holeID", "col", "row"]]
-        self.fiducialTable = df.reset_index()
+# class CMMFiducialMeasTable(object):
 
 
-class CMMFiducialNomTable(object):
+def getCMMFidMeas(filename, flat=False):
+    """If flat, then model wok as a flat surface
+    do this when using a FlatWokNominal
+    """
+    df = pd.read_excel(filename)
+    df = df.rename(columns={
+        "WokPosition": "holeID", "FIF_SN": "id",
+        "Xcore": "xWok", "Ycore": "yWok", "Ztactile": "zWok"
+    })
 
-    def __init__(self, filename):
-        df = pd.read_excel(filename)
-        df = df.rename(columns={
-            "WokPosition": "holeID", "FIF_SN": "id",
-            "Xnominal": "xWok", "Ynominal": "yWok", "Znominal": "zWok"
-        })
+    _col = []
+    _row = []
+    for holeID in df.holeID:
+        if holeID.startswith("F"):
+            _col.append(None)
+            _row.append(None)
+            continue
 
-        _col = []
-        _row = []
-        for holeID in df.holeID:
-            if holeID.startswith("F"):
-                _col.append(None)
-                _row.append(None)
-                continue
+        x = holeID.strip("R")
+        x = x.strip("+")
+        r, c = x.split("C")
+        _col.append(int(c))
+        _row.append(int(r))
 
-            x = holeID.strip("R")
-            x = x.strip("+")
-            r, c = x.split("C")
-            _col.append(int(c))
-            _row.append(int(r))
+    df["row"] = _row
+    df["col"] = _col
 
-        df["row"] = _row
-        df["col"] = _col
-
-        df = df[["id", "xWok", "yWok", "zWok", "holeID", "col", "row"]]
-        self.fiducialTable = df.reset_index()
-
-
-class CMMFiducialMeasAPO(CMMFiducialMeasTable):
-    def __init__(self):
-        super().__init__("FPS_Sloan_CMM_20210504.xlsx")
-
-
-class CMMFiducialNomAPO(CMMFiducialNomTable):
-    def __init__(self):
-        super().__init__("FPS_Sloan_CMM_20210504.xlsx")
+    df = df[["id", "xWok", "yWok", "zWok", "holeID", "col", "row"]]
+    if flat:
+        df["zWok"] = POSITIONER_HEIGHT
+    df.reset_index(inplace=True)
+    df.drop(columns=["index"], inplace=True)
+    return df
 
 
-class CMMFiducialMeasLCO(CMMFiducialMeasTable):
-    def __init__(self):
-        super().__init__("FPS_DuPont_CMM_20210504.xlsx")
+def getCMMFidNom(filename, flat=False):
+    """If flat, then model wok as a flat surface
+    do this when using a FlatWokNominal
+    """
+    df = pd.read_excel(filename)
+    df = df.rename(columns={
+        "WokPosition": "holeID", "FIF_SN": "id",
+        "Xnominal": "xWok", "Ynominal": "yWok", "Znominal": "zWok"
+    })
+
+    _col = []
+    _row = []
+    for holeID in df.holeID:
+        if holeID.startswith("F"):
+            _col.append(None)
+            _row.append(None)
+            continue
+
+        x = holeID.strip("R")
+        x = x.strip("+")
+        r, c = x.split("C")
+        _col.append(int(c))
+        _row.append(int(r))
+
+    df["row"] = _row
+    df["col"] = _col
+
+    df = df[["id", "xWok", "yWok", "zWok", "holeID", "col", "row"]]
+    if flat:
+        df["zWok"] = POSITIONER_HEIGHT
+    df.reset_index(inplace=True)
+    df.drop(columns=["index"], inplace=True)
+    return df
 
 
-class CMMFiducialNomLCO(CMMFiducialNomTable):
-    def __init__(self):
-        super().__init__("FPS_DuPont_CMM_20210504.xlsx")
-
-
-class Assignment(object):
-
-    def __init__(self, assignmentFile):
-        df = pd.read_csv(assignmentFile)
-        import pdb; pdb.set_trace()
-
-
-def assign(csvObj, assignmentFile, cmmMeasObj=None):
-    if cmmMeasObj is not None:
-        csvObj.fiducialTable = cmmMeasObj.fiducialTable
-
+def assign(csvObj, assignmentFile):
+    """Assign robots to holes, modifies csvObj
+    """
     df = pd.read_csv(assignmentFile)
 
+    usedHoles = []
     for ii, row in df.iterrows():
         devID = row.Device
         if devID.startswith("P"):
             pid = int(devID.strip("P"))
             holeID = row.Row + row.Column
-
+            usedHoles.append(holeID)
             # before = csvObj.positionerTable[csvObj.positionerTable.holeID==holeID].positionerID
             # print("before", before)
 
             csvObj.positionerTable.loc[(csvObj.positionerTable.holeID == holeID),'positionerID']= pid
 
+            # import pdb; pdb.set_trace()
+
             # after = csvObj.positionerTable[csvObj.positionerTable.holeID==holeID].positionerID
             # print("after", after)
 
-    return csvObj
+    # remove default robots not present in assignmentFile
+    allHoles = csvObj.positionerTable.holeID
+    removeHoles = list(set(allHoles) - set(usedHoles))
 
-class AssignmentAPO(Assignment):
+    for removeMe in removeHoles:
+        idx = csvObj.positionerTable.loc[csvObj.positionerTable.holeID == removeMe].index
+        csvObj.positionerTable.drop(index=idx, inplace=True)
 
-    def __init__(self):
-        super().__init__("SloanFPS_HexArray_2021July23.csv")
+    csvObj.positionerTable.reset_index(inplace=True)
+    csvObj.positionerTable.drop(columns=["index"], inplace=True)
+
+# class AssignmentAPO(Assignment):
+
+#     def __init__(self):
+#         super().__init__("SloanFPS_HexArray_2021July23.csv")
+
 
 if __name__ == "__main__":
+    # csvObj = FlatWokNominal()
+    # apoCSV = assign(csvObj, "SloanFPS_HexArray_2021July23.csv")
+    # apoCSV.write("/users/csayres/wokCalib/sloanFlatNom")
+
+    # csvObj = CurveWokNominalAPO()
+    # cmmFid = CMMFiducialMeasAPO()
+    # apoCSV = assign(csvObj, "SloanFPS_HexArray_2021July23.csv", cmmFid)
+    # apoCSV.write("/users/csayres/wokCalib/sloanCurveCMM")
+
+
     csvObj = FlatWokNominal()
-    apoCSV = assign(csvObj, "SloanFPS_HexArray_2021July23.csv")
-    apoCSV.write("/users/csayres/wokCalib/sloanFlatNom")
-
-    csvObj = CurveWokNominalAPO()
-    cmmFid = CMMFiducialMeasAPO()
-    apoCSV = assign(csvObj, "SloanFPS_HexArray_2021July23.csv", cmmFid)
-    apoCSV.write("/users/csayres/wokCalib/sloanCurveCMM")
-
-
+    print(len(csvObj.positionerTable))
+    cmmMeasTable = getCMMFidMeas("FPS_DuPont_CMM_20210504.xlsx", flat=True)
+    assign(csvObj, "LCO-sparse-2021Sep20.csv")
+    csvObj.fiducialCoords = cmmMeasTable
+    # print(len(csvObj.positionerTable))
+    csvObj.write("/users/csayres/wokCalib/duPontSparse")
 
 
 # import pdb; pdb.set_trace()
