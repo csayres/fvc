@@ -204,12 +204,22 @@ async def appendDataToFits(filePath, fps, rg, seed):
 async def getIEBData(fps):
     # wok center metal temp
     addHeaders = {}
-    addHeaders["TEMPRTD2"] = (await fps.ieb.read_device("rtd2"))[0]
+    try:
+        addHeaders["TEMPRTD2"] = (await fps.ieb.read_device("rtd2"))[0]
+    except ValueError:
+        addHeaders["TEMPRTD2"] = -1
     # outer wok inside air temp
-    addHeaders["TEMPT3"] = (await fps.ieb.read_device("t3"))[0]
+
+    try:
+        addHeaders["TEMPT3"] = (await fps.ieb.read_device("t3"))[0]
+    except ValueError:
+        addHeaders["TEMPT3"] = -1
 
     # fps air above wok center
-    addHeaders["TEMPRTD3"] = (await fps.ieb.read_device("rtd3"))[0]
+    try:
+        addHeaders["TEMPRTD3"] = (await fps.ieb.read_device("rtd3"))[0]
+    except ValueError:
+        addHeaders["TEMPRTD3"] = -1
 
     addHeaders["LED1"] = (await fps.ieb.read_device("led1"))[0]
     addHeaders["LED2"] = (await fps.ieb.read_device("led2"))[0]
