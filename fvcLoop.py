@@ -217,24 +217,24 @@ async def getIEBData(fps):
     return addHeaders
 
 
-async def ledOn(fps, ledpower=LED_VALUE):
-    global led_state
-    led_state = ledpower
+async def ledOn(fps, devName, ledpower=LED_VALUE):
+    # global led_state
+    # led_state = ledpower
 
     on_value = 32 * int(1023 * (ledpower) / 100)
-    for dev in ["led1", "led2"]:
-        print(dev, "on")
-        device = fps.ieb.get_device(dev)
-        await device.write(on_value)
+    # for dev in ["led1", "led2"]:
+    #     print(dev, "on")
+    device = fps.ieb.get_device(devName)
+    await device.write(on_value)
 
 
-async def ledOff(fps):
-    global led_state
-    led_state = 0
-    for dev in ["led1", "led2"]:
-        print(dev, "off")
-        device = fps.ieb.get_device(dev)
-        await device.write(0)
+async def ledOff(fps, devName):
+    # global led_state
+    # led_state = 0
+    # for dev in ["led1", "led2"]:
+    #     print(dev, "off")
+    device = fps.ieb.get_device(devName)
+    await device.write(0)
 
 
 # async def openCamera():
@@ -346,14 +346,21 @@ async def outAndBackSafe(fps, seed):
 
     if not rg.didFail and rg.smoothCollisions == 0:
         print("sending forward path")
-        writePath(forwardPath, "forward", seed)
+        # writePath(forwardPath, "forward", seed)
         await fps.send_trajectory(forwardPath, use_sync_line=False)
         print("forward path done")
-        # await ledOn(fps)
+        await ledOn(fps, "led1")
         await asyncio.sleep(1)
-        # filename = await exposeFVC(exptime)
-        # await appendDataToFits(filename, fps, rg, seed)
-        # await ledOff(fps)
+        print("exposing img 1")
+        filename = await exposeFVC(exptime)
+        await appendDataToFits(filename, fps, rg, seed)
+        await ledOn(fps, "led2")
+        await asyncio.sleep(1)
+        print("exposing img2")
+        filename = await exposeFVC(exptime)
+        await appendDataToFits(filename, fps, rg, seed)
+        await ledOff(fps, "led1")
+        await ledOff(fps, "led2")
 
         print("sending reverse path")
         writePath(reversePath, "reverse", seed)
