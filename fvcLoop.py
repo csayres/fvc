@@ -425,7 +425,7 @@ async def main():
 
     # for ii in range(100):
     ii = 0
-    while True:
+    while ii < 50:
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
