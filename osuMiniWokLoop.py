@@ -147,7 +147,7 @@ async def outAndBackUnsafe(fps, seed):
     print("out and back UNsafe")
     rg = getGrid(seed)
     forwardPath, reversePath = rg.getRandomPathPair(
-        alphaHome=alphaHome, betaHome=betaHome, betaSafe=False
+        alphaHome=alphaHome, betaHome=betaHome, betaLim=None
     )
 
     print("didFail", rg.didFail)
@@ -191,7 +191,7 @@ async def main():
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
-        await outAndBackSafe(fps, seed)
+        await outAndBackUnsafe(fps, seed)
 
 
     await fps.shutdown()
