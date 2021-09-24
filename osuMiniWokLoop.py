@@ -135,17 +135,17 @@ async def outAndBackSafe(fps, seed):
 
 
         print("sending reverse path")
-        writePath(reversePath, "reverse", seed)
         await fps.send_trajectory(reversePath, use_sync_line=False)
     else:
         print("not sending path")
 
 
-async def outAndBackUnsafe(fps):
+async def outAndBackUnsafe(fps, seed):
     """Move robots out and back on potentially, but hopefully not
     colliding trajectories
     """
     print("out and back UNsafe")
+    rg = getGrid(seed)
     forwardPath, reversePath = rg.getRandomPathPair(
         alphaHome=alphaHome, betaHome=betaHome, betaSafe=False
     )
