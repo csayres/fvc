@@ -318,7 +318,7 @@ class FlatWokNominal(CSVBuilder):
 
     def genPositionerTable(self):
 
-        fdf = designRef[(designRef.fType == "BA") | (designRef.fType == "BOSS") ]
+        fdf = designRef[(designRef.fType == "BA") | (designRef.fType == "BOSS")]
 
         nItems = len(fdf)
         # fake positioner ids, robotail ids
@@ -352,7 +352,8 @@ class FlatWokNominal(CSVBuilder):
 
         fdf = designRef[
         (designRef.fType == "BA") | (designRef.fType == "BOSS") |
-        (designRef.fType == "Fiducial") | (designRef.fType == "GFA-Fiducial")
+        (designRef.fType == "Fiducial") | (designRef.fType == "GFA-Fiducial") |
+        (designRef.fType == "Aux")
         ]
         nItems = len(fdf)
 
@@ -576,12 +577,43 @@ def getCMMFidNom(filename, flat=False):
     df.drop(columns=["index"], inplace=True)
     return df
 
+def getPositionerTable(wokName):
+
+    nItems = len(designRef)
+    # fake positioner ids, robotail ids
+    _pid = numpy.arange(nItems)
+
+
+    d = {}
+    d["positionerID"] = _pid
+    d["robotailID"] = ["FTO%i"%x for x in range(nItems)]
+    d["wokID"] = [wokName] * nItems
+    d["holeID"] = designRef["holeName"]
+    d["apSpecID"] = list(range(nItems))
+    d["bossSpecID"] = list(range(nItems))
+    d["alphaArmLen"] = [7.4] * nItems
+    d["metX"] = [coordio.defaults.MET_BETA_XY[0]] * nItems
+    d["metY"] = [coordio.defaults.MET_BETA_XY[1]] * nItems
+    d["apX"] = [coordio.defaults.AP_BETA_XY[0]] * nItems
+    d["apY"] = [coordio.defaults.AP_BETA_XY[1]] * nItems
+    d["bossX"] = [coordio.defaults.BOSS_BETA_XY[0]] * nItems
+    d["bossY"] = [coordio.defaults.BOSS_BETA_XY[1]] * nItems
+    d["alphaOffset"] = [0] * nItems
+    d["betaOffset"] = [0] * nItems
+    d["dx"] = [0] * nItems
+    d["dy"] = [0] * nItems
+
+    df = pd.DataFrame(d)
+    return df.reset_index()
 
 def assign(csvObj, assignmentFile):
     """Assign robots to holes, modifies csvObj
     """
     df = pd.read_csv(assignmentFile)
 
+    positionerTable = getPositionerTable(csvObj.wokName)
+
+    # import pdb; pdb.set_trace()
     usedHoles = []
     for ii, row in df.iterrows():
         devID = row.Device
@@ -592,23 +624,27 @@ def assign(csvObj, assignmentFile):
             # before = csvObj.positionerTable[csvObj.positionerTable.holeID==holeID].positionerID
             # print("before", before)
 
-            csvObj.positionerTable.loc[(csvObj.positionerTable.holeID == holeID),'positionerID']= pid
+            positionerTable.loc[(positionerTable.holeID == holeID),'positionerID']= pid
 
             # import pdb; pdb.set_trace()
 
-            # after = csvObj.positionerTable[csvObj.positionerTable.holeID==holeID].positionerID
+            # after = positionerTable[positionerTable.holeID==holeID].positionerID
             # print("after", after)
 
+
     # remove default robots not present in assignmentFile
-    allHoles = csvObj.positionerTable.holeID
+    allHoles = positionerTable.holeID
     removeHoles = list(set(allHoles) - set(usedHoles))
 
     for removeMe in removeHoles:
-        idx = csvObj.positionerTable.loc[csvObj.positionerTable.holeID == removeMe].index
-        csvObj.positionerTable.drop(index=idx, inplace=True)
+        idx = positionerTable.loc[positionerTable.holeID == removeMe].index
+        positionerTable.drop(index=idx, inplace=True)
 
-    csvObj.positionerTable.reset_index(inplace=True)
-    csvObj.positionerTable.drop(columns=["index"], inplace=True)
+    positionerTable.reset_index(inplace=True)
+    positionerTable.drop(columns=["index", "level_0"], inplace=True)
+    csvObj.positionerTable = positionerTable
+
+    # import pdb; pdb.set_trace()
 
 # class AssignmentAPO(Assignment):
 
@@ -627,13 +663,26 @@ if __name__ == "__main__":
     # apoCSV.write("/users/csayres/wokCalib/sloanCurveCMM")
 
 
-    csvObj = FlatWokNominal()
-    print(len(csvObj.positionerTable))
-    cmmMeasTable = getCMMFidMeas("FPS_DuPont_CMM_20210504.xlsx", flat=True)
-    assign(csvObj, "LCO-sparse-2021Sep20.csv")
-    csvObj.fiducialCoords = cmmMeasTable
+    # duPont sparse wok
+    # csvObj = FlatWokNominal()
     # print(len(csvObj.positionerTable))
-    csvObj.write("/users/csayres/wokCalib/duPontSparse")
+    # cmmMeasTable = getCMMFidMeas("FPS_DuPont_CMM_20210504.xlsx", flat=True)
+    # assign(csvObj, "LCO-sparse-2021Sep20.csv")
+    # csvObj.fiducialCoords = cmmMeasTable
+    # # print(len(csvObj.positionerTable))
+    # csvObj.write("/users/csayres/wokCalib/duPontSparse")
+
+
+    # osu mini wok
+    csvObj = FlatWokNominal()
+    assign(csvObj, "miniwok_OSU_2021Sep20.csv")
+    # no fiducials in the osu miniwok
+    csvObj.fiducialCoords = csvObj.fiducialCoords[0:0]
+    # print(len(csvObj.positionerTable))
+    # import pdb; pdb.set_trace()
+    csvObj.write("/Users/csayres/wokCalib/osuMiniWok")
+
+
 
 
 # import pdb; pdb.set_trace()
