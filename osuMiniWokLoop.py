@@ -187,7 +187,7 @@ async def main():
     print("unwound")
 
     ii = 0
-    while ii < 50:
+    while True:
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
