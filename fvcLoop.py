@@ -106,7 +106,7 @@ async def exposeFVC(exptime, stack=1):
     while True:
         data = await reader.read(100)
         data = data.decode()
-        print(data)
+        # print(data)
         if "filename=" in data:
             filename = data.split(",")[-1].strip("\n")
         if "%i : "%cmdID in data:
@@ -345,7 +345,7 @@ async def outAndBack(fps, seed, safe=True):
     """Move robots out and back on non-colliding trajectories
     """
     rg = getGrid(seed)
-    print("out and back safe=%s"%str(safe))
+    print("out and back safe=%s seed=%i"%(str(safe), seed))
     if safe:
         betaLim = [165, 195]
     else:
