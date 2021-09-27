@@ -332,7 +332,7 @@ async def unwindGrid(fps):
     print("smooth collisions", rg.smoothCollisions)
     # print(forwardPath)
     # print(reversePath)
-    await fps.send_trajectory(reversePath, use_sync_line=False)
+    await fps.send_trajectory(reversePath, use_sync_line=True)
 
 def writePath(pathdict, direction, seed):
     tnow = datetime.datetime.now().isoformat()
@@ -341,23 +341,28 @@ def writePath(pathdict, direction, seed):
         pickle.dump(pathdict, f)
 
 
-async def outAndBackSafe(fps, seed):
+async def outAndBack(fps, seed, safe=True):
     """Move robots out and back on non-colliding trajectories
     """
     rg = getGrid(seed)
-    print("out and back safe")
+    print("out and back safe=%s"%str(safe))
+    if safe:
+        betaLim = [165, 195]
+    else:
+        betaLim = None
     forwardPath, reversePath = rg.getRandomPathPair(
-        alphaHome=alphaHome, betaHome=betaHome, betaLim=[165, 195]
+        alphaHome=alphaHome, betaHome=betaHome, betaLim=betaLim
     )
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
     #for r in rg.robotDict.values():
         #print("beta", r.betaPath[0])
-
+    await ledOff(fps, "led1")
+    await ledOff(fps, "led2")
     if not rg.didFail and rg.smoothCollisions == 0:
         print("sending forward path")
         # writePath(forwardPath, "forward", seed)
-        await fps.send_trajectory(forwardPath, use_sync_line=False)
+        await fps.send_trajectory(forwardPath, use_sync_line=True)
         print("forward path done")
         await ledOn(fps, "led1")
         await asyncio.sleep(1)
@@ -374,7 +379,7 @@ async def outAndBackSafe(fps, seed):
 
         print("sending reverse path")
         writePath(reversePath, "reverse", seed)
-        await fps.send_trajectory(reversePath, use_sync_line=False)
+        await fps.send_trajectory(reversePath, use_sync_line=True)
     else:
         print("not sending path")
 
@@ -425,11 +430,11 @@ async def main():
 
     # for ii in range(100):
     ii = 0
-    while ii < 50:
+    while ii < 4:
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
-        await outAndBackSafe(fps, seed)
+        await outAndBack(fps, seed, safe=True)
 
 
     await fps.shutdown()
