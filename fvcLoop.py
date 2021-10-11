@@ -8,6 +8,8 @@ import pickle
 import datetime
 
 from jaeger import FPS, log
+from jaeger.commands.trajectory import send_trajectory
+from jaeger.exceptions import FPSLockedError, TrajectoryError
 # log.sh.setLevel(5)
 from kaiju.robotGrid import RobotGridCalib
 from coordio.defaults import positionerTableCalib, wokCoordsCalib, fiducialCoordsCalib
@@ -366,7 +368,15 @@ async def outAndBack(fps, seed, safe=True):
     if not rg.didFail and rg.smoothCollisions == 0:
         print("sending forward path")
         # writePath(forwardPath, "forward", seed)
-        await fps.send_trajectory(forwardPath, use_sync_line=True)
+        # await fps.send_trajectory(forwardPath, use_sync_line=True)
+        try:
+            await fps.send_trajectory(forwardPath, use_sync_line=True)
+            # await send_trajectory(fps, forwardPath, use_sync_line=True)
+        except TrajectoryError as e:
+            print("trajectory error on forward.")
+            print("failed positioners", e.trajector.failed_positioners)
+            return
+
         print("forward path done")
         await ledOn(fps, "led1")
         await asyncio.sleep(1)
@@ -383,7 +393,17 @@ async def outAndBack(fps, seed, safe=True):
 
         print("sending reverse path")
         writePath(reversePath, "reverse", seed)
-        await fps.send_trajectory(reversePath, use_sync_line=True)
+        try:
+            await fps.send_trajectory(reversePath, use_sync_line=True)
+            # await send_trajectory(fps, reversePath, use_sync_line=True)
+        except TrajectoryError as e:
+            print("trajectory error on reverse.")
+            print("failed positioners", e.trajector.failed_positioners)
+            print("trying to unwind instead")
+            await unwindGrid(fps)
+            return
+
+        # await fps.send_trajectory(reversePath, use_sync_line=True)
     else:
         print("not sending path")
 
