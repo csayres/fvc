@@ -272,11 +272,15 @@ async def updateCurrentPos(fps, rg, setKaiju=True):
     _posID = []
     _alphaReport = []
     _betaReport = []
+    printOne = True
     for r in rg.robotDict.values():
         if r.isOffline:
             continue
         await fps.positioners[r.id].update_position()
         alpha, beta = fps.positioners[r.id].position
+        if printOne:
+            print("robot %i at %.4f, %.4f"%(r.id, alpha, beta))
+            printOne = False
         _posID.append(r.id)
         _alphaReport.append(alpha)
         _betaReport.append(beta)
@@ -403,7 +407,7 @@ async def outAndBack(fps, seed, safe=True):
 #         print("not sending path")
 
 async def main():
-    seed = None
+    seed = 9
     if seed is None:
         seed = numpy.random.randint(0, 30000)
 
@@ -430,11 +434,11 @@ async def main():
 
     # for ii in range(100):
     ii = 0
-    while ii < 4:
+    while ii <500:
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
-        await outAndBack(fps, seed, safe=True)
+        await outAndBack(fps, seed, safe=False)
 
 
     await fps.shutdown()
