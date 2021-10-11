@@ -373,9 +373,21 @@ async def outAndBack(fps, seed, safe=True):
             await fps.send_trajectory(forwardPath, use_sync_line=True)
             # await send_trajectory(fps, forwardPath, use_sync_line=True)
         except TrajectoryError as e:
-            print("trajectory error on forward.")
-            print("failed positioners", e.trajector.failed_positioners)
-            return
+            print("trajectory error on forward.  trying to resend")
+            try :
+                await.fps.send_trajectory(forwardPath, use_sync_line=True)
+            except TrajectoryError as e:
+                print("trajectory failed twice!!!!")
+                writePath(forwardPath, "forward", seed)
+                # note offending robots
+                t = e.trajectory.failed_positioners
+                with open("failed_positioners_forward_%i.txt"%seed, "w") as f:
+                    f.writeline(str(t))
+                print("failed on forward, continue")
+                return # dont send forward path
+                print("unwinding grid")
+                return
+            print("second try to send trajectory worked?!??!")
 
         print("forward path done")
         await ledOn(fps, "led1")
@@ -397,11 +409,20 @@ async def outAndBack(fps, seed, safe=True):
             await fps.send_trajectory(reversePath, use_sync_line=True)
             # await send_trajectory(fps, reversePath, use_sync_line=True)
         except TrajectoryError as e:
-            print("trajectory error on reverse.")
-            print("failed positioners", e.trajector.failed_positioners)
-            print("trying to unwind instead")
-            await unwindGrid(fps)
-            return
+            print("trajectory error on reverse.  trying to resend")
+            try :
+                await.fps.send_trajectory(reversePath, use_sync_line=True)
+            except TrajectoryError as e:
+                print("trajectory failed twice!!!!")
+                writePath(reversePath, "reverse", seed)
+                # note offending robots
+                t = e.trajectory.failed_positioners
+                with open("failed_positioners_reverse_%i.txt"%seed, "w") as f:
+                    f.writeline(str(t))
+                print("unwinding grid")
+                await unwindGrid(fps)
+                return
+            print("second try to send trajectory worked?!??!")
 
         # await fps.send_trajectory(reversePath, use_sync_line=True)
     else:
