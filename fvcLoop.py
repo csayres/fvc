@@ -375,7 +375,7 @@ async def outAndBack(fps, seed, safe=True):
         except TrajectoryError as e:
             print("trajectory error on forward.  trying to resend")
             try :
-                await.fps.send_trajectory(forwardPath, use_sync_line=True)
+                await fps.send_trajectory(forwardPath, use_sync_line=True)
             except TrajectoryError as e:
                 print("trajectory failed twice!!!!")
                 writePath(forwardPath, "forward", seed)
@@ -411,7 +411,7 @@ async def outAndBack(fps, seed, safe=True):
         except TrajectoryError as e:
             print("trajectory error on reverse.  trying to resend")
             try :
-                await.fps.send_trajectory(reversePath, use_sync_line=True)
+                await fps.send_trajectory(reversePath, use_sync_line=True)
             except TrajectoryError as e:
                 print("trajectory failed twice!!!!")
                 writePath(reversePath, "reverse", seed)
