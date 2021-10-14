@@ -106,9 +106,9 @@ async def exposeFVC(exptime, stack=1):
     writer.write(cmdStr.encode())
     await writer.drain()
     while True:
-        data = await reader.read(100)
+        data = await reader.readline()
         data = data.decode()
-        # print(data)
+        print("read from fvc:", data)
         if "filename=" in data:
             filename = data.split(",")[-1].strip("\n")
         if "%i : "%cmdID in data:
@@ -382,10 +382,10 @@ async def outAndBack(fps, seed, safe=True):
                 # note offending robots
                 t = e.trajectory.failed_positioners
                 with open("failed_positioners_forward_%i.txt"%seed, "w") as f:
-                    f.writeline(str(t))
-                print("failed on forward, continue")
-                return # dont send forward path
+                    f.write(str(t))
+                print("failed on forward, 2x")
                 print("unwinding grid")
+                await unwindGrid(fps)
                 return
             print("second try to send trajectory worked?!??!")
 
@@ -404,7 +404,7 @@ async def outAndBack(fps, seed, safe=True):
         await ledOff(fps, "led2")
 
         print("sending reverse path")
-        writePath(reversePath, "reverse", seed)
+        #writePath(reversePath, "reverse", seed)
         try:
             await fps.send_trajectory(reversePath, use_sync_line=True)
             # await send_trajectory(fps, reversePath, use_sync_line=True)
@@ -418,7 +418,7 @@ async def outAndBack(fps, seed, safe=True):
                 # note offending robots
                 t = e.trajectory.failed_positioners
                 with open("failed_positioners_reverse_%i.txt"%seed, "w") as f:
-                    f.writeline(str(t))
+                    f.write(str(t))
                 print("unwinding grid")
                 await unwindGrid(fps)
                 return
