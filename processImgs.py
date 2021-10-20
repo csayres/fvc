@@ -18,6 +18,8 @@ import coordio
 from coordio import defaults
 import time
 from scipy.optimize import minimize
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 
 # get default tables, any image will do, they're all the same
@@ -339,7 +341,7 @@ def positionerToWok(
 def solveImage(imgFile, plot=False):
     # associate fiducials and fit
     # transfrom
-    imgData, objects = extract(imgFile)
+    imgData, objects = extract(imgFile.strip())
     # first transform to rough wok xy
     # by default transfrom
     xyCCD = objects[["x", "y"]].to_numpy()
@@ -424,12 +426,17 @@ def compileMetrology():
     with open("metImgs.txt", "r") as f:
         metImgs = f.readlines()
 
-    dfList = []
-    for metImg in metImgs:
-        print("processing img",metImg)
-        metImg = metImg.strip()
-        dfList.append(solveImage(metImg, plot=True))
-        import pdb; pdb.set_trace()
+    metImgs = [x.strip() for x in metImgs]
+
+    p = Pool(cpu_count()-1)
+    dfList = p.map(solveImage, metImgs)
+    p.close()
+
+    # dfList = []
+    # for metImg in metImgs:
+    #     print("processing img",metImg)
+
+    #     dfList.append(solveImage(metImg, plot=True))
 
     dfList = pandas.concat(dfList)
 
@@ -452,43 +459,56 @@ def minimizeMe(x, robotID, alpha, beta, xWok, yWok):
     return numpy.sum((xw-xWok)**2 + (yw-yWok)**2)
 
 
+def fitOneRobot(rID):
+    df = pandas.read_csv("duPontSparseMeas.csv")
+    dfR = df[df.robotID==rID]
+    xExpect = dfR.xWokExpect.to_numpy()
+    yExpect = dfR.yWokExpect.to_numpy()
+    xMeas = dfR.xWokMeas.to_numpy()
+    yMeas = dfR.yWokMeas.to_numpy()
+
+    #minimize
+    x0 = numpy.array([
+        defaults.MET_BETA_XY[0], defaults.ALPHA_LEN,
+        0, 0, 0, 0
+    ])
+    args = (rID, dfR.cmdAlpha, dfR.cmdBeta, xMeas, yMeas)
+    tstart = time.time()
+    out = minimize(minimizeMe, x0, args, method="Powell")
+    # print(out.x - x0)
+    # print(rID, "alpha arm len", out.x[1])
+    tend = time.time()
+    # print("took %.2f"%(tend-tstart))
+
+    xFit, yFit = forwardModel(out.x, rID, dfR.cmdAlpha, dfR.cmdBeta)
+
+
+    dx = (xMeas-xFit)
+    dy = (yMeas-yFit)
+    umRMS = numpy.sqrt(numpy.mean(dx**2+dy**2))*1000
+    return out.x, umRMS
+
 def fitMetrology():
+    # loop version
     df = pandas.read_csv("duPontSparseMeas.csv")
     robotIDs = set(df.robotID)
     calibs = []
     for rID in robotIDs:
-        dfR = df[df.robotID==rID]
-        xExpect = dfR.xWokExpect.to_numpy()
-        yExpect = dfR.yWokExpect.to_numpy()
-        xMeas = dfR.xWokMeas.to_numpy()
-        yMeas = dfR.yWokMeas.to_numpy()
+        calibs.append(fitOneRobot(rID))
 
-        #minimize
-        x0 = numpy.array([
-            defaults.MET_BETA_XY[0], defaults.ALPHA_LEN,
-            0, 0, 0, 0
-        ])
-        args = (rID, dfR.cmdAlpha, dfR.cmdBeta, xMeas, yMeas)
-        tstart = time.time()
-        out = minimize(minimizeMe, x0, args, method="Powell")
-        # print(out.x - x0)
-        # print(rID, "alpha arm len", out.x[1])
-        tend = time.time()
-        # print("took %.2f"%(tend-tstart))
-
-        xFit, yFit = forwardModel(out.x, rID, dfR.cmdAlpha, dfR.cmdBeta)
-
-
-        dx = (xMeas-xFit)*1000
-        dy = (yMeas-yFit)*1000
-        sqErr = dx**2 + dy**2
-
-        print(rID, numpy.sqrt(numpy.sum(sqErr)/len(dx)))
-        calibs.append(out.x)
+def fitMetrology2():
+    # loop version
+    df = pandas.read_csv("duPontSparseMeas.csv")
+    robotIDs = set(df.robotID)
+    p = Pool(cpu_count()-1)
+    out = p.map(fitOneRobot, robotIDs)
+    for robotID, (x, rms) in zip(robotIDs, out):
+        print(robotID, rms)
+    p.close()
 
 
 compileMetrology()
-# fitMetrology()
+fitMetrology2()
 
 """
 process:
