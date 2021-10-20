@@ -23,11 +23,14 @@ from functools import partial
 
 
 # get default tables, any image will do, they're all the same
-ff = fits.open(glob.glob("duPontSparseImg/59499/proc*.fits")[10])
+# ff = fits.open(glob.glob("duPontSparseImg/59499/proc*.fits")[10])
 # positionerTable = ff[2].data  # was an error in mapping for 1033, instead use coordio
 positionerTable = coordio.defaults.positionerTableCalib
-wokCoords = ff[3].data
-fiducialCoords = pandas.DataFrame(ff[4].data)
+wokCoords = coordio.defaults.wokCoordsCalib
+fiducialCoords = coordio.defaults.fiducialCoordsCalib
+
+# wokCoords = ff[3].data
+# fiducialCoords = pandas.DataFrame(ff[4].data)
 # id like to do the following, but astropy fits tables
 # but i get an endianness problem (https://github.com/astropy/astropy/issues/1156)
 #xyCMM = fiducialCoords[["xWok", "yWok"]].to_numpy()
@@ -48,9 +51,11 @@ SimTrans = SimilarityTransform(
     scale = 0.11149215438621102
 )
 
+utahBasePath = "/uufs/chpc.utah.edu/common/home/sdss50/sdsswork/data/fps/engineering/osu/forConor/LVC"
+laptopBasePath = "duPontSparseImg"
 
-def organize():
-    allImgFiles = glob.glob("duPontSparseImg/59499/proc*.fits")
+def organize(basePath):
+    allImgFiles = glob.glob(basePath + "/59499/proc*.fits")
     metImgFiles = []
     apMetImgFiles = []
     badFiles = []
@@ -58,6 +63,10 @@ def organize():
     imgStack = []
 
     for ii, f in enumerate(allImgFiles):
+        imgNumber = int(f.split(".")[0].split("-")[-1])
+        if imgNumber < 142:
+            continue
+
         print("%s: %i of %i"%(f, ii, len(allImgFiles)))
         g = fits.open(f)
 
@@ -506,9 +515,10 @@ def fitMetrology2():
         print(robotID, rms)
     p.close()
 
-
-compileMetrology()
-fitMetrology2()
+if __name__ == "__main__":
+    organize()
+    compileMetrology()
+    fitMetrology2()
 
 """
 process:
