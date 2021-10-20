@@ -9,24 +9,42 @@ import os
 from matplotlib.patches import Ellipse
 import pandas
 from skimage.transform import SimilarityTransform, AffineTransform
-from coordio.zernike import ZernFit, unitDiskify, unDiskify
+# from coordio.zernike import ZernFit, unitDiskify, unDiskify
 from coordio.zhaoburge import fitZhaoBurge, getZhaoBurgeXY
+import coordio
+from kaiju import RobotGridCalib
+from kaiju.utils import plotOne
+import coordio
+from coordio import defaults
+import time
+from scipy.optimize import minimize
 
 
-# get default tables, any image will do
+# get default tables, any image will do, they're all the same
 ff = fits.open(glob.glob("duPontSparseImg/59499/proc*.fits")[10])
-positionerTable = pandas.DataFrame(ff[2].data)
-wokCoords = pandas.DataFrame(ff[3].data)
+# positionerTable = ff[2].data  # was an error in mapping for 1033, instead use coordio
+positionerTable = coordio.defaults.positionerTableCalib
+wokCoords = ff[3].data
 fiducialCoords = pandas.DataFrame(ff[4].data)
+# id like to do the following, but astropy fits tables
+# but i get an endianness problem (https://github.com/astropy/astropy/issues/1156)
+#xyCMM = fiducialCoords[["xWok", "yWok"]].to_numpy()
+xCMM = fiducialCoords.xWok.to_numpy()
+yCMM = fiducialCoords.yWok.to_numpy()
+xyCMM = numpy.array([xCMM, yCMM]).T
 
 # print("fiducial coords\n\n")
 # print(fiducialCoords)
 # print("\n\n")
+# desipolids= numpy.array([0,1,2,3,4,5,6,9,20,27,28,29,30],dtype=int)
+# lcopolids= numpy.array([0,1,2,3,4,5,6,9,20,28,29],dtype=int)
 
-def rms(actual, predicted):
-    sqerr = (actual - predicted)**2
-    mse = numpy.mean(sqerr)
-    return numpy.sqrt(mse)
+# best guess at first transform from image to wok coords
+SimTrans = SimilarityTransform(
+    translation = numpy.array([-467.96317617, -356.55049009]),
+    rotation = 0.003167701580600088,
+    scale = 0.11149215438621102
+)
 
 
 def organize():
@@ -105,7 +123,7 @@ def extract(imgFile):
     objects = objects[objects["npix"] > 100]
 
     # filter on most eliptic, this is an assumption!!!!
-    objects["outerFIF"] = objects.ecentricity > 0.15
+    # objects["outerFIF"] = objects.ecentricity > 0.15
 
     return imgData, objects
 
@@ -145,216 +163,334 @@ def findOpticalCenter(imgFile, plot=False):
     return xOpt, yOpt
 
 
-SimTrans = SimilarityTransform(
-    translation = numpy.array([-467.96317617, -356.55049009]),
-    rotation = 0.003167701580600088,
-    scale = 0.11149215438621102
-)
+class RoughTransform(object):
+    def __init__(self, objects, fiducialCoords):
+        # scale pixels to mm roughly
+        xCCD = objects.x.to_numpy()
+        yCCD = objects.y.to_numpy()
+        xWok = fiducialCoords.xWok.to_numpy()
+        yWok = fiducialCoords.yWok.to_numpy()
+        self.meanCCDX = numpy.mean(xCCD)
+        self.meanCCDY = numpy.mean(yCCD)
+        self.stdCCDX = numpy.std(xCCD)
+        self.stdCCDY = numpy.std(yCCD)
+
+        self.stdWokX = numpy.std(xWok)
+        self.stdWokY = numpy.std(yWok)
+
+        # scale to rough wok coords enough to make association
+        self.roughWokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
+        self.roughWokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+
+    def apply(self, xCCD, yCCD):
+        wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
+        wokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+        return wokX, wokY
 
 
-def associateFiducials(imgFile, plot=False):
-    xOptCCD, yOptCCD = findOpticalCenter(imgFile)
-
-    imgData, objects = extract(imgFile)
-
-    # scale pixels to mm roughly
-    xCCD = objects.x.to_numpy()
-    yCCD = objects.y.to_numpy()
-    xWok = fiducialCoords.xWok.to_numpy()
-    yWok = fiducialCoords.yWok.to_numpy()
-    meanCCDX = numpy.mean(xCCD)
-    meanCCDY = numpy.mean(yCCD)
-    stdCCDX = numpy.std(xCCD)
-    stdCCDY = numpy.std(yCCD)
-
-    stdWokX = numpy.std(xWok)
-    stdWokY = numpy.std(yWok)
-
-    # scale to rough wok coords enough to make association
-    roughWokX = (xCCD - meanCCDX) / stdCCDX * stdWokX
-    roughWokY = (yCCD - meanCCDY) / stdCCDY * stdWokY
-
-
-    xCCDFound = []
-    yCCDFound = []
-    roughWokXFound = []
-    roughWokYFound = []
-    xWokFound = []
-    yWokFound = []
-
-    for cmmx, cmmy in zip(xWok, yWok):
-        dist = numpy.sqrt((roughWokX - cmmx)**2 + (roughWokY - cmmy)**2)
+def argNearestNeighbor(xyA, xyB):
+    """loop over xy list A, find nearest neighbor in list B
+    return the indices in list b that match A
+    """
+    xyA = numpy.array(xyA)
+    xyB = numpy.array(xyB)
+    out = []
+    distance = []
+    for x, y in xyA:
+        dist = numpy.sqrt((x - xyB[:, 0])**2 + (y - xyB[:, 1])**2)
         amin = numpy.argmin(dist)
+        distance.append(dist[amin])
+        out.append(amin)
 
-        # throw out outer fiducials
-        if objects.outerFIF.to_numpy()[amin]:
-            continue
-
-        xCCDFound.append(xCCD[amin])
-        yCCDFound.append(yCCD[amin])
-        roughWokXFound.append(roughWokX[amin])
-        roughWokYFound.append(roughWokY[amin])
-        xWokFound.append(cmmx)
-        yWokFound.append(cmmy)
+    return numpy.array(out), numpy.array(distance)
 
 
-    tform = SimilarityTransform()
-    # tform = AffineTransform()
-    src = numpy.array([xCCDFound, yCCDFound]).T
-    dest = numpy.array([xWokFound, yWokFound]).T
-    tform.estimate(src, dest)
+class FullTransfrom(object):
+    # use fiducials to fit this
+    polids = numpy.array([0,1,2,3,4,5,6,9,20,28,29],dtype=int)
+
+    def __init__(self, xyCCD, xyWok):
+        # first fit a transrotscale model
+        self.simTrans = SimilarityTransform()
+        self.simTrans.estimate(xyCCD, xyWok)
+
+        # apply the model to the data
+        xySimTransFit = self.simTrans(xyCCD)
+
+        # use zb polys to get the rest of the way
+        # use leave-one out xverification to
+        # estimate "unbiased" errors in fit
+        self.unbiasedErrs = []
+        for ii in range(len(xyCCD)):
+            _xyWok = xyWok.copy()
+            _xySimTransFit = xySimTransFit.copy()
+            _xyWok = numpy.delete(_xyWok, ii, axis=0)
+            _xySimTransFit = numpy.delete(_xySimTransFit, ii, axis=0)
+            fitCheck = numpy.array(xySimTransFit[ii,:]).reshape((1,2))
+            destCheck = numpy.array(xyWok[ii,:]).reshape((1,2))
+
+            polids, coeffs = fitZhaoBurge(
+                _xySimTransFit[:,0], _xySimTransFit[:,1],
+                _xyWok[:,0], _xyWok[:,1], polids=self.polids
+            )
+
+            dx, dy = getZhaoBurgeXY(polids, coeffs, fitCheck[:,0], fitCheck[:,1])
+            zxfit = fitCheck[:,0] + dx
+            zyfit = fitCheck[:,1] + dy
+            zxyfit = numpy.array([zxfit, zyfit]).T
+            self.unbiasedErrs.append(destCheck.squeeze()-zxyfit.squeeze())
+
+        self.unbiasedErrs = numpy.array(self.unbiasedErrs)
+        self.unbiasedRMS = numpy.sqrt(numpy.mean(self.unbiasedErrs**2))
+
+        # now do the "official fit", using all points
+
+        polids, self.coeffs = fitZhaoBurge(
+            xySimTransFit[:,0], xySimTransFit[:,1],
+            xyWok[:,0], xyWok[:,1], polids=self.polids
+        )
+
+        dx, dy = getZhaoBurgeXY(
+            polids, self.coeffs, xySimTransFit[:,0], xySimTransFit[:,1]
+        )
+
+        xWokFit = xySimTransFit[:,0] + dx
+        yWokFit = xySimTransFit[:,1] + dy
+        xyWokFit = numpy.array([xWokFit, yWokFit]).T
+        self.errs = xyWok - xyWokFit
+        self.rms = numpy.sqrt(numpy.mean(self.errs**2))
+
+    def apply(self, xyCCD):
+        # return wok xy
+        xySimTransFit = self.simTrans(xyCCD)
+        dx, dy = getZhaoBurgeXY(
+            self.polids, self.coeffs, xySimTransFit[:,0], xySimTransFit[:,1]
+        )
+        xWokFit = xySimTransFit[:,0] + dx
+        yWokFit = xySimTransFit[:,1] + dy
+        xyWokFit = numpy.array([xWokFit, yWokFit]).T
+        return xyWokFit
+
+
+def getPositionerCoordinates(imgFile):
+    """ commanded locations for robots """
+    ff = fits.open(imgFile)
+    tt = ff[-1].data
+    return tt
+
+
+def positionerToWok(
+        positionerID, alphaDeg, betaDeg,
+        xBeta=None, yBeta=None, la=None,
+        alphaOffDeg=None, betaOffDeg=None,
+        dx=None, dy=None #, dz=None
+    ):
+    posRow = positionerTable[positionerTable.positionerID == positionerID]
+    assert len(posRow) == 1
+
+
+    if xBeta is None:
+        xBeta = posRow.metX
+    if yBeta is None:
+        yBeta = posRow.metY
+    if la is None:
+        la = posRow.alphaArmLen
+    if alphaOffDeg is None:
+        alphaOffDeg = posRow.alphaOffset
+    if betaOffDeg is None:
+        betaOffDeg = posRow.betaOffset
+    if dx is None:
+        dx = posRow.dx
+    if dy is None:
+        dy = posRow.dy
+    # if dz is None:
+    #     dz = posRow.dz
+
+    xt, yt = coordio.conv.positionerToTangent(
+        alphaDeg, betaDeg, xBeta, yBeta,
+        la, alphaOffDeg, betaOffDeg
+    )
+
+    if hasattr(xt, "__len__"):
+        zt = numpy.zeros(len(xt))
+    else:
+        zt = 0
+
 
     # import pdb; pdb.set_trace()
+    wokRow = wokCoords[wokCoords.holeID == posRow.holeID.values[0]]
+
+    b = numpy.array([wokRow.xWok, wokRow.yWok, wokRow.zWok])
+
+    iHat = numpy.array([wokRow.ix, wokRow.iy, wokRow.iz])
+    jHat = numpy.array([wokRow.jx, wokRow.jy, wokRow.jz])
+    kHat = numpy.array([wokRow.kx, wokRow.ky, wokRow.kz])
+
+    xw, yw, zw = coordio.conv.tangentToWok(
+        xt, yt, zt, b, iHat, jHat, kHat,
+        elementHeight=coordio.defaults.POSITIONER_HEIGHT, scaleFac=1,
+        dx=dx, dy=dy, dz=0
+
+    )
+
+    return xw, yw, zw, xt, yt, b
+
+
+def solveImage(imgFile, plot=False):
+    # associate fiducials and fit
+    # transfrom
+    imgData, objects = extract(imgFile)
+    # first transform to rough wok xy
+    # by default transfrom
+    xyCCD = objects[["x", "y"]].to_numpy()
+    # apply an initial guess at
+    # trans/rot/scale
+    xyWokRough = SimTrans(xyCCD)
+
+    # first associate fiducials and build
+    # a good transform
+    argFound, distance = argNearestNeighbor(xyCMM, xyWokRough)
+    # print("max fiducial distance", numpy.max(distance))
+    xyFiducialCCD = xyCCD[argFound]
+
+    ft = FullTransfrom(xyFiducialCCD, xyCMM)
+
+    # print("rms's in microns", ft.unbiasedRMS*1000, ft.rms*1000)
+
+    # transform all CCD detections to wok space
+    xyWokMeas = ft.apply(xyCCD)
+
+    pc = getPositionerCoordinates(imgFile)
+
     # import pdb; pdb.set_trace()
-    # where is the optical center in wok coords
-    xyOptWok = tform([[xOptCCD, yOptCCD]])
-    print("xyOptWok", xyOptWok)
+    # should add this to to the data table?
+    # computed desiredWok positions?
+    # again, to_numpy is failing due to endianness
+    cmdAlpha = pc["cmdAlpha"]
+    cmdBeta = pc["cmdBeta"]
+    # cmdAlpha = pc["alphaReport"]
+    # cmdBeta = pc["betaReport"]
+    positionerID = pc["positionerID"]
 
-    xyFit = tform(src)
-    xyError = (dest - xyFit)*1000 # error in microns
+    xExpectPos = []
+    yExpectPos = []
+    for pid, ca, cb in zip(positionerID, cmdAlpha, cmdBeta):
+        xw, yw, zw, xt, yt, b = positionerToWok(
+            pid, ca, cb
+        )
+        xExpectPos.append(xw)
+        yExpectPos.append(yw)
 
-    print("rms similarity microns", rms(xyFit*1000, dest*1000))
+    xyExpectPos = numpy.array([xExpectPos, yExpectPos]).T
 
-
-    # xyFit -= xyOptWok
-    # dest -= xyOptWok
-
-    # theta = numpy.pi/2
-    # rotMat = numpy.array([
-    #     [numpy.cos(theta), -numpy.sin(theta)],
-    #     [numpy.sin(theta), numpy.cos(theta)]
-    # ])
-
-    # xyFit = (rotMat @ xyFit.T).T
-    # dest = (rotMat @ dest.T).T
-    # rotate by 90
-    # for orders in range(3,20):
-    #     zf = ZernFit(xyFit[:,0], xyFit[:,1], dest[:,0], dest[:,1], method="grad", orders=orders)
-    #     zxyFit = zf.apply(xyFit[:,0], xyFit[:,1])
-    #     zxyFit = numpy.array(zxyFit).T
-
-    #     zxyError = (dest - zxyFit)*1000 # error in microns
-
-    #     print("order: %i, points %i rms zern microns"%(len(zf.coeff), len(zf.zxyStack)), rms(zxyFit*1000, dest*1000))
-
-
-    # cross validate
-
-    # scaleR = 1.1*numpy.max(numpy.sqrt(xyFit[:,0]**2+xyFit[:,1]**2))
-    # for orders in range(3,20):
-    #     errs = []
-
-    #     for ii in range(len(xyFit)):
-    #         _xyFit = xyFit.copy()
-    #         _dest = dest.copy()
-    #         xyTest = xyFit[ii]
-    #         destTest = dest[ii]
-    #         _xyFit = numpy.delete(_xyFit, ii, axis=0)
-    #         _dest = numpy.delete(_dest, ii, axis=0)
-    #         zf = ZernFit(_xyFit[:,0], _xyFit[:,1], _dest[:,0], _dest[:,1], method="grad", orders=orders, scaleR=scaleR)
-    #         zxyFit = zf.apply(xyTest[0], xyTest[1])
-    #         err = (destTest-numpy.array(zxyFit))*1000
-    #         errs.append(err)
-
-    #     print("order", orders, "unbiased error rms", numpy.sqrt(numpy.mean(numpy.array(errs)**2)))
-
-
-    # zf = ZernFit(xyFit[:,0], xyFit[:,1], dest[:,0], dest[:,1], method="grad", orders=5)
-    # zxyFit = zf.apply(xyFit[:,0], xyFit[:,1])
-    # zxyFit = numpy.array(zxyFit).T
-
-    # zxyError = (dest - zxyFit)*1000 # error in microns
-
-    # print("order: rms zern microns",rms(zxyFit*1000, dest*1000))
-
-    # try desi's zb fitter
-    # cross validate it
-    # idlist = [0,1,2,3,4]
-    polids= numpy.array([0,1,2,3,4,5,6,9,20,27,28,29,30],dtype=int)
-    nextCoeff = 5
-
-    _x, _y, scaleR = unitDiskify(xyFit[:,0], xyFit[:,1])
-    nxyFit = numpy.array([_x, _y]).T
-    _x, _y, scaleR = unitDiskify(dest[:,0], dest[:,1], scaleR)
-    nxyDest = numpy.array([_x,_y]).T
-
-    # plt.figure()
-    # plt.plot(nxyFit[:,0], nxyFit[:,1], '.k')
-    # plt.plot(nxyDest[:,0], nxyDest[:,1], 'xk')
-    # plt.show()
-
-    errs = []
-    for ii in range(len(xyFit)):
-        _xyFit = nxyFit.copy()
-        _dest = nxyDest.copy()
-        fitCheck = numpy.array(nxyFit[ii,:]).reshape((1,2))
-        destCheck = numpy.array(nxyDest[ii,:]).reshape((1,2))
-        _xyFit = numpy.delete(_xyFit, ii, axis=0)
-        _dest = numpy.delete(_dest, ii, axis=0)
-        polids, coeffs = fitZhaoBurge(_xyFit[:,0], _xyFit[:,1], _dest[:,0], _dest[:,1], polids=polids)
-        dx, dy = getZhaoBurgeXY(polids, coeffs, fitCheck[:,0], fitCheck[:,1])
-        zxfit = fitCheck[:,0] + dx
-        zyfit = fitCheck[:,1] + dy
-        zxfit, zyfit = unDiskify(zxfit,zyfit,scaleR)
-        zxyfit = numpy.array([zxfit, zyfit]).T
-        errs.append(dest[ii]-zxyfit.squeeze())
-
-        # zxfit = xyFit[:,0] + dx
-        # zyfit = xyFit[:,1] + dy
-
-        # zxyFit = numpy.array([zxfit, zyfit]).T
-
-        # zxyError = (dest - zxyFit)*1000
-
-    errs = numpy.array(errs) * 1000
-    plt.figure()
-    plt.hist(numpy.linalg.norm(errs, axis=1))
-    plt.show()
-    print("polids", polids)
-    print("unbiased rms zernike fit", numpy.sqrt(numpy.mean(errs**2)))
-
-
-    polids, coeffs = fitZhaoBurge(xyFit[:,0], xyFit[:,1], dest[:,0], dest[:,1], polids=polids)
-    dx, dy = getZhaoBurgeXY(polids, coeffs, xyFit[:,0], xyFit[:,1])
-    zxfit = xyFit[:,0] + dx
-    zyfit = xyFit[:,1] + dy
-    zxyFit = numpy.array([zxfit, zyfit]).T
-    zxyError = (dest-zxyFit)*1000
-
-    print("rms zernike fit", numpy.sqrt(numpy.mean(zxyError**2)))
-    # plt.figure()
-    # plt.plot(polids, coeffs, '.-k')
-    # plt.show()
+    argFound, distance = argNearestNeighbor(xyExpectPos, xyWokMeas)
+    # print("mean/max positioner distance", numpy.mean(distance), numpy.max(distance))
+    xyWokRobotMeas = xyWokMeas[argFound]
 
     if plot:
-        plt.figure(figsize=(10, 10))
-        plt.title("Rough Transform + Assoc")
-        plt.plot(xWok, yWok, 'or')
-        # plot nearest neighbor detections
-        for ii in range(len(xWokFound)):
-            plt.plot(roughWokXFound[ii], roughWokYFound[ii], 'xb')
-            plt.plot([xWokFound[ii], roughWokXFound[ii]], [yWokFound[ii], roughWokYFound[ii]], 'k')
+        rg = RobotGridCalib()
+        for pid, ca, cb in zip(positionerID, cmdAlpha, cmdBeta):
+            xw, yw, zw, xt, yt, b = positionerToWok(
+                pid, ca, cb
+            )
+            # import pdb; pdb.set_trace()
+            r = rg.robotDict[pid]
+            r.setAlphaBeta(ca, cb)
+        ax = plotOne(1, robotGrid=rg, isSequence=False, returnax=True)
+        for rid, r in rg.robotDict.items():
+            ax.text(r.basePos[0], r.basePos[1], str(rid) + ":" + str(r.holeID))
+        ax.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'ok')
+        plt.savefig("debug.png", dpi=350)
+        plt.close()
 
-        # plot all detections
-        plt.plot(roughWokX, roughWokY, '*g')
+        plt.figure()
+        plt.hist(distance)
+        plt.savefig("debug2.png")
 
-        plt.figure(figsize=(10,10))
-        plt.title("SimilarityTransform")
-        plt.quiver(dest[:,0], dest[:,1], xyError[:,0], xyError[:,1], angles="xy")
+    return pandas.DataFrame(
+        {
+            "robotID": positionerID,
+            "cmdAlpha": cmdAlpha,
+            "cmdBeta": cmdBeta,
+            "xWokMeas": xyWokRobotMeas[:, 0],
+            "yWokMeas": xyWokRobotMeas[:, 1],
+            "xWokExpect": xExpectPos,
+            "yWokExpect": yExpectPos
+        }
+    )
 
 
-        plt.figure(figsize=(10,10))
-        plt.title("Zern Transform")
-        plt.quiver(dest[:,0], dest[:,1], zxyError[:,0], zxyError[:,1], angles="xy")
+def compileMetrology():
+    with open("metImgs.txt", "r") as f:
+        metImgs = f.readlines()
+
+    dfList = []
+    for metImg in metImgs:
+        print("processing img",metImg)
+        metImg = metImg.strip()
+        dfList.append(solveImage(metImg, plot=True))
+        import pdb; pdb.set_trace()
+
+    dfList = pandas.concat(dfList)
+
+    dfList.to_csv("duPontSparseMeas.csv", index=False)
 
 
-        plt.show()
+def forwardModel(x, robotID, alpha, beta):
+    xBeta, la, alphaOff, betaOff, dx, dy = x
+    xw, yw, zw, xt, yt, b = positionerToWok(
+        robotID, alpha, beta,
+        xBeta=xBeta, la=la,
+        alphaOffDeg=alphaOff, betaOffDeg=betaOff,
+        dx=dx, dy=dy
+    )
+    return xw, yw
 
 
-# with open("metImgs.txt", "r") as f:
-#     metImgs = f.readlines()
+def minimizeMe(x, robotID, alpha, beta, xWok, yWok):
+    xw, yw = forwardModel(x, robotID, alpha, beta)
+    return numpy.sum((xw-xWok)**2 + (yw-yWok)**2)
 
-# for metImg in metImgs:
 
-associateFiducials("medianImg.fits", plot=True)
+def fitMetrology():
+    df = pandas.read_csv("duPontSparseMeas.csv")
+    robotIDs = set(df.robotID)
+    calibs = []
+    for rID in robotIDs:
+        dfR = df[df.robotID==rID]
+        xExpect = dfR.xWokExpect.to_numpy()
+        yExpect = dfR.yWokExpect.to_numpy()
+        xMeas = dfR.xWokMeas.to_numpy()
+        yMeas = dfR.yWokMeas.to_numpy()
 
+        #minimize
+        x0 = numpy.array([
+            defaults.MET_BETA_XY[0], defaults.ALPHA_LEN,
+            0, 0, 0, 0
+        ])
+        args = (rID, dfR.cmdAlpha, dfR.cmdBeta, xMeas, yMeas)
+        tstart = time.time()
+        out = minimize(minimizeMe, x0, args, method="Powell")
+        # print(out.x - x0)
+        # print(rID, "alpha arm len", out.x[1])
+        tend = time.time()
+        # print("took %.2f"%(tend-tstart))
+
+        xFit, yFit = forwardModel(out.x, rID, dfR.cmdAlpha, dfR.cmdBeta)
+
+
+        dx = (xMeas-xFit)*1000
+        dy = (yMeas-yFit)*1000
+        sqErr = dx**2 + dy**2
+
+        print(rID, numpy.sqrt(numpy.sum(sqErr)/len(dx)))
+        calibs.append(out.x)
+
+
+compileMetrology()
+# fitMetrology()
+
+"""
+process:
+
+"""
