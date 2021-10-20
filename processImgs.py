@@ -60,10 +60,10 @@ def organize(basePath):
     apMetImgFiles = []
     badFiles = []
 
-    imgStack = []
+    meanImg = None
 
     for ii, f in enumerate(allImgFiles):
-        imgNumber = int(f.split(".")[0].split("-")[-1])
+        imgNumber = int(f.split(".")[-2].split("-")[-1])
         if imgNumber < 142:
             continue
 
@@ -75,7 +75,10 @@ def organize(basePath):
             os.remove(f)
             continue
 
-        imgStack.append(g[1].data)
+        if meanImg is None:
+            meanImg = g[1].data
+        else:
+            meanImg += g[1].data
 
         if g[1].header["LED2"] == 0:
             metImgFiles.append(f)
@@ -84,7 +87,7 @@ def organize(basePath):
 
     print(len(metImgFiles), len(apMetImgFiles))
 
-    medianImg = numpy.median(imgStack, axis=0)
+    medianImg = meanImg / (len(metImgFiles)+len(apMetImgFiles))
     fitsio.write("medianImg.fits", medianImg)
 
     with open("metImgs.txt", "w") as f:
@@ -516,7 +519,7 @@ def fitMetrology2():
     p.close()
 
 if __name__ == "__main__":
-    organize()
+    #organize(utahBasePath)
     compileMetrology()
     fitMetrology2()
 
