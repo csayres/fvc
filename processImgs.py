@@ -12,14 +12,13 @@ from skimage.transform import SimilarityTransform, AffineTransform
 # from coordio.zernike import ZernFit, unitDiskify, unDiskify
 from coordio.zhaoburge import fitZhaoBurge, getZhaoBurgeXY
 import coordio
-from kaiju import RobotGridCalib
-from kaiju.utils import plotOne
 import coordio
 from coordio import defaults
 import time
 from scipy.optimize import minimize
 from multiprocessing import Pool, cpu_count
 from functools import partial
+import seaborn as sns
 
 
 # get default tables, any image will do, they're all the same
@@ -85,7 +84,7 @@ def organize(basePath):
         else:
             apMetImgFiles.append(f)
 
-    print(len(metImgFiles), len(apMetImgFiles))
+    print("nimgs", len(metImgFiles), len(apMetImgFiles))
 
     medianImg = meanImg / (len(metImgFiles)+len(apMetImgFiles))
     fitsio.write("medianImg.fits", medianImg)
@@ -354,6 +353,7 @@ def solveImage(imgFile, plot=False):
     # associate fiducials and fit
     # transfrom
     imgData, objects = extract(imgFile.strip())
+    # print("found", len(objects), "in", imgFile)
     # first transform to rough wok xy
     # by default transfrom
     xyCCD = objects[["x", "y"]].to_numpy()
@@ -402,6 +402,9 @@ def solveImage(imgFile, plot=False):
     xyWokRobotMeas = xyWokMeas[argFound]
 
     if plot:
+        # print("im trying to plot you")
+        from kaiju import RobotGridCalib
+        from kaiju.utils import plotOne
         rg = RobotGridCalib()
         for pid, ca, cb in zip(positionerID, cmdAlpha, cmdBeta):
             xw, yw, zw, xt, yt, b = positionerToWok(
@@ -414,12 +417,13 @@ def solveImage(imgFile, plot=False):
         for rid, r in rg.robotDict.items():
             ax.text(r.basePos[0], r.basePos[1], str(rid) + ":" + str(r.holeID))
         ax.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'ok')
-        plt.savefig("debug.png", dpi=350)
+        plt.savefig("%s.png"%imgFile.strip(), dpi=350)
         plt.close()
 
         plt.figure()
         plt.hist(distance)
         plt.savefig("debug2.png")
+        plt.close()
 
     return pandas.DataFrame(
         {
@@ -429,26 +433,28 @@ def solveImage(imgFile, plot=False):
             "xWokMeas": xyWokRobotMeas[:, 0],
             "yWokMeas": xyWokRobotMeas[:, 1],
             "xWokExpect": xExpectPos,
-            "yWokExpect": yExpectPos
+            "yWokExpect": yExpectPos,
+            "imgFile": [imgFile]*len(positionerID),
         }
     )
 
 
-def compileMetrology():
+def compileMetrology(multiprocess=True, plot=False):
     with open("metImgs.txt", "r") as f:
         metImgs = f.readlines()
 
     metImgs = [x.strip() for x in metImgs]
 
-    p = Pool(cpu_count()-1)
-    dfList = p.map(solveImage, metImgs)
-    p.close()
+    si = partial(solveImage, plot=plot)
+    if multiprocess:
+        p = Pool(cpu_count()-1)
+        dfList = p.map(si, metImgs)
+        p.close()
 
-    # dfList = []
-    # for metImg in metImgs:
-    #     print("processing img",metImg)
-
-    #     dfList.append(solveImage(metImg, plot=True))
+    else:
+        dfList = []
+        for metImg in metImgs:
+            dfList.append(solveImage(metImg, plot=plot))
 
     dfList = pandas.concat(dfList)
 
@@ -468,7 +474,15 @@ def forwardModel(x, robotID, alpha, beta):
 
 def minimizeMe(x, robotID, alpha, beta, xWok, yWok):
     xw, yw = forwardModel(x, robotID, alpha, beta)
-    return numpy.sum((xw-xWok)**2 + (yw-yWok)**2)
+    # clip outliers?
+    dist = numpy.sqrt((xw-xWok)**2 + (yw-yWok)**2)
+
+    # meandist = numpy.mean(dist)
+    # stddist = numpy.std(dist)
+    # keepdist = dist[dist < meandist*5*stddist]
+    # return numpy.sum(keepdist)
+
+    return numpy.sum(dist)
 
 
 def fitOneRobot(rID):
@@ -488,17 +502,14 @@ def fitOneRobot(rID):
     tstart = time.time()
     out = minimize(minimizeMe, x0, args, method="Powell")
     # print(out.x - x0)
-    # print(rID, "alpha arm len", out.x[1])
+    print("minimize result", rID, out.success)
     tend = time.time()
     # print("took %.2f"%(tend-tstart))
 
     xFit, yFit = forwardModel(out.x, rID, dfR.cmdAlpha, dfR.cmdBeta)
 
+    return out.x, xMeas, yMeas, xFit, yFit, dfR.imgFile
 
-    dx = (xMeas-xFit)
-    dy = (yMeas-yFit)
-    umRMS = numpy.sqrt(numpy.mean(dx**2+dy**2))*1000
-    return out.x, umRMS
 
 def fitMetrology():
     # loop version
@@ -508,19 +519,76 @@ def fitMetrology():
     for rID in robotIDs:
         calibs.append(fitOneRobot(rID))
 
+
 def fitMetrology2():
     # loop version
     df = pandas.read_csv("duPontSparseMeas.csv")
     robotIDs = set(df.robotID)
     p = Pool(cpu_count()-1)
     out = p.map(fitOneRobot, robotIDs)
-    for robotID, (x, rms) in zip(robotIDs, out):
-        print(robotID, rms)
     p.close()
+    xm = []
+    ym = []
+    _dx = []
+    _dy = []
+    _umErr = []
+    _robots = []
+
+    for robotID, (x, xMeas, yMeas, xFit, yFit, imgFile) in zip(robotIDs, out):
+        imgFile = list(imgFile)
+        dx = (xMeas-xFit)
+        dy = (yMeas-yFit)
+        errs = numpy.sqrt(dx**2 + dy**2)
+        xm.append(xMeas)
+        ym.append(yMeas)
+        _dx.append(dx)
+        _dy.append(dy)
+        _umErr.append(errs*1000)
+        _robots.append([robotID]*len(dx))
+
+        # meanErr = numpy.mean(errs)*1000
+        # umRMS = numpy.sqrt(numpy.mean(dx**2+dy**2))*1000
+        # print("robotID umRMS", robotID, umRMS)
+        # plt.figure()
+        # plt.title(str(robotID))
+        # plt.hist(errs*1000)
+        # plt.show()
+
+    xm = numpy.array(xm).flatten()
+    ym = numpy.array(ym).flatten()
+    _dx = numpy.array(_dx).flatten()
+    _dy = numpy.array(_dx).flatten()
+    _umErr = numpy.array(_umErr).flatten()
+    _robots = numpy.array(_robots).flatten()
+
+    df = pandas.DataFrame({
+        "xMeas": xm,
+        "yMeas": ym,
+        "dx": _dx,
+        "dy": _dy,
+        "umErr": _umErr,
+        "robotID": _robots
+    })
+
+    plt.figure(figsize=(10,10))
+    plt.quiver(xm, ym, _dx, _dy, angles="xy")
+    plt.savefig("quiverFit.png", dpi=350)
+    plt.close()
+
+    plt.figure(figsize=(15, 8))
+    sns.boxplot(x="robotID", y="umErr", data=df)
+    plt.xticks(rotation=45)
+    plt.savefig("fitStatsFull.png", dpi=350)
+    plt.ylim([0, 100])
+    plt.savefig("fitStatsZoom.png", dpi=350)
+    plt.close()
+
+
+
 
 if __name__ == "__main__":
     #organize(utahBasePath)
-    compileMetrology()
+    compileMetrology(multiprocess=True, plot=False) # plot isn't working?
     fitMetrology2()
 
 """
