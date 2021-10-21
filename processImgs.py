@@ -220,7 +220,7 @@ def argNearestNeighbor(xyA, xyB):
 
 class FullTransfrom(object):
     # use fiducials to fit this
-    polids = numpy.array([0,1,2,3,4,5,6,9,20,28,29],dtype=int)
+    polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int)
 
     def __init__(self, xyCCD, xyWok):
         # first fit a transrotscale model
