@@ -36,7 +36,7 @@ alphaHome = 0
 betaHome = 180
 seed = None
 escapeDeg = 20  # 20 degrees of motion to escape
-use_sync_line = False
+use_sync_line = True
 
 xCMM = fiducialCoordsCalib.xWok.to_numpy()
 yCMM = fiducialCoordsCalib.yWok.to_numpy()
@@ -489,7 +489,7 @@ def extract(imgData):
 
     # ignore everything less than 100 pixels
     # something changed when rick bumped things?
-    #objects = objects[objects["npix"] > 100]
+    objects = objects[objects["npix"] > 100]
 
     # filter on most eliptic, this is an assumption!!!!
     # objects["outerFIF"] = objects.ecentricity > 0.15
