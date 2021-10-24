@@ -373,6 +373,7 @@ def solveImage(imgFile, plot=False):
 
     # transform all CCD detections to wok space
     xyWokMeas = ft.apply(xyCCD)
+    xyFiducialMeas = ft.apply(xyFiducialCCD)
 
     pc = getPositionerCoordinates(imgFile)
 
@@ -402,6 +403,25 @@ def solveImage(imgFile, plot=False):
     xyWokRobotMeas = xyWokMeas[argFound]
 
     if plot:
+        # plot the fiducial fit quiver and
+        # histogram
+        plt.figure()
+        plt.title("Fiducial Fit residuals")
+        dx = xyCMM[:,0] - xyFiducialMeas[:,0]
+        dy = xyCMM[:,1] - xyFiducialMeas[:,1]
+        plt.quiver(xyFiducialMeas[:,0], xyFiducialMeas[:,1], dx, dy)
+        plt.savefig("%s.fiducialquiver.png"%imgFile.strip(), dpi=250)
+        plt.xlabel("wok x (mm)")
+        plt.ylabel("wok y (mm)")
+        plt.close()
+
+        plt.figure()
+        plt.hist(numpy.sqrt(dx**2+dy**2)*1000)
+        plt.xlabel("fiducial fit error (um)")
+        plt.savefig("%s.fiducialerror.png"%imgFile.strip(), dpi=250)
+        plt.close()
+
+
         # print("im trying to plot you")
         from kaiju import RobotGridCalib
         from kaiju.utils import plotOne
@@ -417,7 +437,7 @@ def solveImage(imgFile, plot=False):
         for rid, r in rg.robotDict.items():
             ax.text(r.basePos[0], r.basePos[1], str(rid) + ":" + str(r.holeID))
         ax.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'ok')
-        plt.savefig("%s.png"%imgFile.strip(), dpi=350)
+        plt.savefig("%s.viz.png"%imgFile.strip(), dpi=350)
         plt.close()
 
         plt.figure()
@@ -486,6 +506,7 @@ def minimizeMe(x, robotID, alpha, beta, xWok, yWok):
 
 
 def fitOneRobot(rID):
+    # turn this into an object w/ attrs
     df = pandas.read_csv("duPontSparseMeas.csv")
     dfR = df[df.robotID==rID]
     xExpect = dfR.xWokExpect.to_numpy()
@@ -508,20 +529,23 @@ def fitOneRobot(rID):
 
     xFit, yFit = forwardModel(out.x, rID, dfR.cmdAlpha, dfR.cmdBeta)
 
-    return out.x, xMeas, yMeas, xFit, yFit, dfR.imgFile
+    # where we would be with zero calib
+    xNC, yNC = forwardModel(x0, rID, dfR.cmdAlpha, dfR.cmdBeta)
+
+    return out.x, xMeas, yMeas, xFit, yFit, dfR.imgFile, xNC, yNC
 
 
-def fitMetrology():
-    # loop version
-    df = pandas.read_csv("duPontSparseMeas.csv")
-    robotIDs = set(df.robotID)
-    calibs = []
-    for rID in robotIDs:
-        calibs.append(fitOneRobot(rID))
+# def fitMetrology():
+#     # loop version
+#     df = pandas.read_csv("duPontSparseMeas.csv")
+#     robotIDs = set(df.robotID)
+#     calibs = []
+#     for rID in robotIDs:
+#         calibs.append(fitOneRobot(rID))
 
 
-def fitMetrology2():
-    # loop version
+def calibrateRobots(plot=False, outfileName=None):
+    # multiprocess version
     df = pandas.read_csv("duPontSparseMeas.csv")
     robotIDs = set(df.robotID)
     p = Pool(cpu_count()-1)
@@ -533,11 +557,37 @@ def fitMetrology2():
     _dy = []
     _umErr = []
     _robots = []
+    _dxNC = []
+    _dyNC = []
 
-    for robotID, (x, xMeas, yMeas, xFit, yFit, imgFile) in zip(robotIDs, out):
+    npt = positionerTable.copy()
+    # convert datatypes
+    npt["metY"] = npt["metY"].astype(float)
+    npt["alphaOffset"] = npt["alphaOffset"].astype(float)
+    npt["betaOffset"] = npt["betaOffset"].astype(float)
+    npt["dx"] = npt["dx"].astype(float)
+    npt["dy"] = npt["dy"].astype(float)
+
+    for robotID, (x, xMeas, yMeas, xFit, yFit, imgFile, xNC, yNC) in zip(robotIDs, out):
+        # update calibration table
+        xBeta, alphaArmLen, alphaOff, betaOff, xOff, yOff = x
+        print("xOff", xOff)
+        idx = list(npt.positionerID).index(robotID)
+        npt.at[idx, "alphaArmLen"] = alphaArmLen
+        npt.at[idx, "metX"] = xBeta
+        npt.at[idx, "alphaOffset"] = alphaOff
+        npt.at[idx, "betaOffset"] = betaOff
+        npt.at[idx, "dx"] = xOff
+        npt.at[idx, "dy"] = yOff
+
+        print("n points", len(xMeas))
         imgFile = list(imgFile)
-        dx = (xMeas-xFit)
-        dy = (yMeas-yFit)
+        dx = (xFit - xMeas)
+        dy = (yFit - yMeas)
+        dxNC = (xNC - xMeas)
+        dyNC = (yNC - yMeas)
+        _dxNC.append(dxNC)
+        _dyNC.append(dyNC)
         errs = numpy.sqrt(dx**2 + dy**2)
         xm.append(xMeas)
         ym.append(yMeas)
@@ -554,12 +604,19 @@ def fitMetrology2():
         # plt.hist(errs*1000)
         # plt.show()
 
+
+    # drop unnamed columns
+    npt = npt.loc[:, ~npt.columns.str.contains('^Unnamed')]
+    npt.to_csv("positionerTableCalib.csv", index=False)
+
     xm = numpy.array(xm).flatten()
     ym = numpy.array(ym).flatten()
     _dx = numpy.array(_dx).flatten()
-    _dy = numpy.array(_dx).flatten()
+    _dy = numpy.array(_dy).flatten()
     _umErr = numpy.array(_umErr).flatten()
     _robots = numpy.array(_robots).flatten()
+    _dxNC = numpy.array(_dxNC).flatten()
+    _dyNC = numpy.array(_dyNC).flatten()
 
     df = pandas.DataFrame({
         "xMeas": xm,
@@ -570,26 +627,50 @@ def fitMetrology2():
         "robotID": _robots
     })
 
-    plt.figure(figsize=(10,10))
-    plt.quiver(xm, ym, _dx, _dy, angles="xy")
-    plt.savefig("quiverFit.png", dpi=350)
-    plt.close()
+    if plot:
 
-    plt.figure(figsize=(15, 8))
-    sns.boxplot(x="robotID", y="umErr", data=df)
-    plt.xticks(rotation=45)
-    plt.savefig("fitStatsFull.png", dpi=350)
-    plt.ylim([0, 100])
-    plt.savefig("fitStatsZoom.png", dpi=350)
-    plt.close()
+        # plot non calibrated quiver
+
+        # detect outliers > 1mm?
+        keep = _umErr < 1000
+
+        plt.figure(figsize=(10,10))
+        plt.title("before robot calibration applied")
+        Q = plt.quiver(xm[keep], ym[keep], _dxNC[keep], _dyNC[keep], angles="xy")
+        plt.quiverkey(Q, X=0.3, Y=1.1, U=2,
+                     label='Quiver key, length = 2 mm', labelpos='E')
+        plt.savefig("quiverFitNC.png", dpi=250)
+        plt.xlabel("wok x (mm)")
+        plt.ylabel("wok y (mm)")
+        plt.close()
+
+        plt.figure(figsize=(10,10))
+        plt.title("after robot calibration applied")
+        Q = plt.quiver(xm[keep], ym[keep], _dx[keep], _dy[keep], angles="xy")
+
+        plt.quiverkey(Q, X=0.3, Y=1.1, U=0.050,
+                     label='Quiver key, length = 50 microns', labelpos='E')
+        plt.xlabel("wok x (mm)")
+        plt.ylabel("wok y (mm)")
+        plt.savefig("quiverFit.png", dpi=250)
+        plt.close()
+
+        plt.figure(figsize=(10, 5))
+        plt.title("Calibrated Blind Move Error")
+        sns.boxplot(x="robotID", y="umErr", data=df)
+        plt.xticks(rotation=45)
+        plt.savefig("fitStatsFull.png", dpi=250)
+        plt.ylim([0, 150])
+        plt.savefig("fitStatsZoom.png", dpi=250)
+        plt.close()
 
 
 
 
 if __name__ == "__main__":
     #organize(utahBasePath)
-    compileMetrology(multiprocess=True, plot=False) # plot isn't working?
-    fitMetrology2()
+    # compileMetrology(multiprocess=True, plot=False) # plot isn't working?
+    calibrateRobots(plot=True)
 
 """
 process:

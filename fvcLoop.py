@@ -14,6 +14,11 @@ from jaeger.exceptions import FPSLockedError, TrajectoryError
 from kaiju.robotGrid import RobotGridCalib
 from coordio.defaults import positionerTableCalib, wokCoordsCalib, fiducialCoordsCalib
 # from baslerCam import BaslerCamera, BaslerCameraSystem, config
+import sep
+from skimage.transform import SimilarityTransform
+from coordio.zhaoburge import fitZhaoBurge, getZhaoBurgeXY
+
+# from processImgs import SimTrans, argNearestNeighbor, FullTransform
 
 # Speed = 3               # RPM at output, breakout as kaiju param?
 # smoothPts = 5           # width of velocity smoothing window, breakout as kaiju param?
@@ -30,62 +35,136 @@ LED_VALUE = 1
 alphaHome = 0
 betaHome = 180
 seed = None
-escapeDeg = 20 # 20 degrees of motion to escape
+escapeDeg = 20  # 20 degrees of motion to escape
+use_sync_line = False
+
+xCMM = fiducialCoordsCalib.xWok.to_numpy()
+yCMM = fiducialCoordsCalib.yWok.to_numpy()
+xyCMM = numpy.array([xCMM, yCMM]).T
+
+
+def argNearestNeighbor(xyA, xyB):
+    """loop over xy list A, find nearest neighbor in list B
+    return the indices in list b that match A
+    """
+    xyA = numpy.array(xyA)
+    xyB = numpy.array(xyB)
+    out = []
+    distance = []
+    for x, y in xyA:
+        dist = numpy.sqrt((x - xyB[:, 0])**2 + (y - xyB[:, 1])**2)
+        amin = numpy.argmin(dist)
+        distance.append(dist[amin])
+        out.append(amin)
+
+    return numpy.array(out), numpy.array(distance)
+
+
+class RoughTransform(object):
+    def __init__(self, centroids, expectedTargCoords):
+        # scale pixels to mm roughly
+        xCCD = centroids.x.to_numpy()
+        yCCD = centroids.y.to_numpy()
+
+        xWok = numpy.array(
+            [expectedTargCoords.xWokMetExpect.to_numpy(), xCMM]
+        ).flatten()
+        yWok = numpy.array(
+            [expectedTargCoords.yWokMetExpect.to_numpy(), yCMM]
+        ).flatten()
+
+        self.meanCCDX = numpy.mean(xCCD)
+        self.meanCCDY = numpy.mean(yCCD)
+        self.stdCCDX = numpy.std(xCCD)
+        self.stdCCDY = numpy.std(yCCD)
+
+        self.stdWokX = numpy.std(xWok)
+        self.stdWokY = numpy.std(yWok)
+
+        # scale to rough wok coords enough to make association
+        self.roughWokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
+        self.roughWokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+
+    def apply(self, xCCD, yCCD):
+        wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
+        wokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+        return wokX, wokY
+
+
+class FullTransfrom(object):
+    # use fiducials to fit this
+    polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int)
+
+    def __init__(self, xyCCD, xyWok):
+        # first fit a transrotscale model
+        self.simTrans = SimilarityTransform()
+        self.simTrans.estimate(xyCCD, xyWok)
+
+        # apply the model to the data
+        xySimTransFit = self.simTrans(xyCCD)
+
+        # use zb polys to get the rest of the way
+        # use leave-one out xverification to
+        # estimate "unbiased" errors in fit
+        self.unbiasedErrs = []
+        for ii in range(len(xyCCD)):
+            _xyWok = xyWok.copy()
+            _xySimTransFit = xySimTransFit.copy()
+            _xyWok = numpy.delete(_xyWok, ii, axis=0)
+            _xySimTransFit = numpy.delete(_xySimTransFit, ii, axis=0)
+            fitCheck = numpy.array(xySimTransFit[ii,:]).reshape((1,2))
+            destCheck = numpy.array(xyWok[ii,:]).reshape((1,2))
+
+            polids, coeffs = fitZhaoBurge(
+                _xySimTransFit[:,0], _xySimTransFit[:,1],
+                _xyWok[:,0], _xyWok[:,1], polids=self.polids
+            )
+
+            dx, dy = getZhaoBurgeXY(polids, coeffs, fitCheck[:,0], fitCheck[:,1])
+            zxfit = fitCheck[:,0] + dx
+            zyfit = fitCheck[:,1] + dy
+            zxyfit = numpy.array([zxfit, zyfit]).T
+            self.unbiasedErrs.append(destCheck.squeeze()-zxyfit.squeeze())
+
+        self.unbiasedErrs = numpy.array(self.unbiasedErrs)
+        self.unbiasedRMS = numpy.sqrt(numpy.mean(self.unbiasedErrs**2))
+
+        # now do the "official fit", using all points
+
+        polids, self.coeffs = fitZhaoBurge(
+            xySimTransFit[:,0], xySimTransFit[:,1],
+            xyWok[:,0], xyWok[:,1], polids=self.polids
+        )
+
+        dx, dy = getZhaoBurgeXY(
+            polids, self.coeffs, xySimTransFit[:,0], xySimTransFit[:,1]
+        )
+
+        xWokFit = xySimTransFit[:,0] + dx
+        yWokFit = xySimTransFit[:,1] + dy
+        xyWokFit = numpy.array([xWokFit, yWokFit]).T
+        self.errs = xyWok - xyWokFit
+        self.rms = numpy.sqrt(numpy.mean(self.errs**2))
+
+    def apply(self, xyCCD):
+        # return wok xy
+        xySimTransFit = self.simTrans(xyCCD)
+        dx, dy = getZhaoBurgeXY(
+            self.polids, self.coeffs, xySimTransFit[:,0], xySimTransFit[:,1]
+        )
+        xWokFit = xySimTransFit[:,0] + dx
+        yWokFit = xySimTransFit[:,1] + dy
+        xyWokFit = numpy.array([xWokFit, yWokFit]).T
+        return xyWokFit
 
 # globals
 def getGrid(seed):
     rg = RobotGridCalib(angStep, collisionBuffer, epsilon, seed)
+
+    rg.robotDict[1097].setAlphaBeta(0, 180.0001)
+    rg.robotDict[1097].setDestinationAlphaBeta(0, 180.0001)
+    rg.robotDict[1097].isOffline = True
     return rg
-
-    # rg.robotDict[1255].setAlphaBeta(305, 238.29)
-    # rg.robotDict[1255].setDestinationAlphaBeta(305, 238.29)
-    # rg.robotDict[1255].isOffline = True
-    # rg.robotDict[717].setAlphaBeta(0,180)
-    # rg.robotDict[717].setDestinationAlphaBeta(0,180)
-    # rg.robotDict[717].isOffline = True
-    # rg.robotDict[1367].setAlphaBeta(0, 164.88)
-    # rg.robotDict[1367].setDestinationAlphaBeta(0, 164.88)
-    # rg.robotDict[1367].isOffline = True
-    # rg.robotDict[398].setAlphaBeta(0, 152.45)
-    # rg.robotDict[398].setDestinationAlphaBeta(0, 152.45)
-    # rg.robotDict[398].isOffline = True
-    # rg.robotDict[775].setAlphaBeta(0, 180)
-    # rg.robotDict[775].setDestinationAlphaBeta(0, 180)
-    # rg.robotDict[775].isOffline = True
-    # rg.robotDict[738].setAlphaBeta(0, 179.8121)
-    # rg.robotDict[738].setDestinationAlphaBeta(0, 179.8121)
-    # rg.robotDict[738].isOffline = True
-    # rg.robotDict[1003].setAlphaBeta(0, 180.0502)
-    # rg.robotDict[1003].setDestinationAlphaBeta(0, 180.0502)
-    # rg.robotDict[1003].isOffline = True
-    # rg.robotDict[981].setAlphaBeta(0, 179.7738)
-    # rg.robotDict[981].setDestinationAlphaBeta(0, 179.7738)
-    # rg.robotDict[981].isOffline = True
-    # rg.robotDict[545].setAlphaBeta(5.5527, 180.2876)
-    # rg.robotDict[545].setDestinationAlphaBeta(5.5527, 180.2876)
-    # rg.robotDict[545].isOffline = True
-    # rg.robotDict[688].setAlphaBeta(0.0129, 180.8187)
-    # rg.robotDict[688].setDestinationAlphaBeta(0.0129, 180.8187)
-    # rg.robotDict[688].isOffline = True
-    # rg.robotDict[474].setAlphaBeta(0, 180)
-    # rg.robotDict[474].setDestinationAlphaBeta(0, 180)
-    # rg.robotDict[474].isOffline = True
-    # rg.robotDict[769].setAlphaBeta(45, 180)
-    # rg.robotDict[769].setDestinationAlphaBeta(45, 180)
-    # rg.robotDict[769].isOffline = True
-    # rg.robotDict[652].setAlphaBeta(0, 180)
-    # rg.robotDict[652].setDestinationAlphaBeta(0, 180)
-    # rg.robotDict[652].isOffline = True
-    # rg.robotDict[703].setAlphaBeta(0, 180)
-    # rg.robotDict[703].setDestinationAlphaBeta(0, 180)
-    # rg.robotDict[703].isOffline = True
-    # # rg.robotDict[769].setAlphaBeta(0, 180)
-    # # rg.robotDict[769].setDestinationAlphaBeta(0, 180)
-    # # rg.robotDict[769].isOffline = True
-    # return rg
-
-# cam = None
-# led_state = None
 
 
 async def exposeFVC(exptime, stack=1):
@@ -150,12 +229,12 @@ def dataFrameToFitsRecord(df):
 #     return {"temp1":1, "temp2":2, "temp3":3}
 
 
-async def appendDataToFits(filePath, fps, rg, seed):
+async def writeProcFITS(filePath, fps, rg, seed):
     d, oldname = os.path.split(filePath)
     newpath = os.path.join(d, "proc-" + oldname)
     f = fits.open(filePath)
-    # invert columns
 
+    # invert columns
     f[1].data = f[1].data[:,::-1]
 
     tables = [
@@ -249,24 +328,6 @@ async def ledOff(fps, devName):
     await device.write(0)
 
 
-# async def openCamera():
-#     global cam
-#     camID = 0
-#     bcs = BaslerCameraSystem(BaslerCamera, camera_config=config)
-#     sids = bcs.list_available_cameras()
-#     cam = await bcs.add_camera(uid=sids[camID], autoconnect=True)
-
-
-# async def expose():
-#     global cam
-#     tnow = datetime.datetime.now().isoformat()
-#     expname = tnow + ".fits"
-#     exp = await cam.expose(exptime * 1e-6, stack=nAvgImg, filename=expname)
-#     await exp.write()
-#     print("wrote %s"%expname, "max counts", numpy.max(exp.data))
-#     return expname
-
-
 async def updateCurrentPos(fps, rg, setKaiju=True):
     """Update kaiju's robot grid to reflect the current
     state as reported by the fps
@@ -338,13 +399,135 @@ async def unwindGrid(fps):
     print("smooth collisions", rg.smoothCollisions)
     # print(forwardPath)
     # print(reversePath)
-    await fps.send_trajectory(reversePath, use_sync_line=True)
+    await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+
 
 def writePath(pathdict, direction, seed):
     tnow = datetime.datetime.now().isoformat()
     fname = tnow + "_%s_%i.pkl"%(direction, seed)
     with open (fname, "wb") as f:
         pickle.dump(pathdict, f)
+
+
+def setRandomTargets(rg, alphaHome=0, betaHome=180, betaLim=None):
+    for robot in rg.robotDict.values():
+        robot.setDestinationAlphaBeta(alphaHome, betaHome)
+        if robot.isOffline:
+            continue
+        if betaLim is not None:
+            alpha = numpy.random.uniform(0, 359.99)
+            beta = numpy.random.uniform(betaLim[0], betaLim[1])
+            robot.setAlphaBeta(alpha, beta)
+        else:
+            robot.setXYUniform()
+
+    if betaLim is not None and rg.getNCollisions() > 0:
+        raise RuntimeError("betaLim specified, but collisions present")
+    else:
+        rg.decollideGrid()
+
+    # return the desired xyWok positions for the metrology
+    # fiber for each robot, move this stuff to robot grid...
+    robotID = []
+    xWokMetExpect = []
+    yWokMetExpect = []
+    xWokApExpect = []
+    yWokApExpect = []
+    xWokBossExpect = []
+    yWokBossExpect = []
+
+
+    for r in rg.robotDict.values():
+        robotID.append(r.id)
+        _xm, _ym, _zm = r.metWokXYZ
+        xWokMetExpect.append(_xm)
+        yWokMetExpect.append(_ym)
+
+        _xa, _ya, _za = r.apWokXYZ
+        xWokApExpect.append(_xa)
+        yWokApExpect.append(_ya)
+
+        _xb, _yb, _zb = r.apWokXYZ
+        xWokBossExpect.append(_xb)
+        yWokBossExpect.append(_yb)
+
+    return pd.DataFrame(
+        {
+            "robotID": robotID,
+            "xWokMetExpect": xWokMetExpect,
+            "yWokMetExpect": yWokMetExpect,
+            "xWokApExpect": xWokApExpect,
+            "yWokApExpect": yWokApExpect,
+            "xWokBossExpect": xWokBossExpect,
+            "yWokBossExpect": yWokBossExpect,
+        }
+    )
+
+
+def extract(imgData):
+    # run source extractor,
+    # do some filtering
+    # return the extracted centroids
+    imgData = numpy.array(imgData, dtype="float")
+    bkg = sep.Background(imgData)
+    bkg_image = bkg.back()
+    data_sub = imgData - bkg_image
+    objects = sep.extract(data_sub, 3.5, err=bkg.globalrms)
+    objects = pd.DataFrame(objects)
+
+    # ecentricity
+    objects["ecentricity"] = 1 - objects["b"] / objects["a"]
+
+    # slope of ellipse (optical distortion direction)
+    objects["slope"] = numpy.tan(objects["theta"] + numpy.pi/2) # rotate by 90
+    # intercept of optical distortion direction
+    objects["intercept"] = objects["y"] - objects["slope"] * objects["x"]
+
+    # ignore everything less than 100 pixels
+    objects = objects[objects["npix"] > 100]
+
+    # filter on most eliptic, this is an assumption!!!!
+    # objects["outerFIF"] = objects.ecentricity > 0.15
+
+    return objects
+
+
+def processImage(imgData, expectedTargCoords):
+    centroids = extract(imgData)
+    xyCCD = centroids[["x", "y"]].to_numpy()
+
+    # just to get close enough to associate the
+    # correct centroid with the correct fiducial...
+    rt = RoughTransform(centroids, expectedTargCoords)
+    xyWokRough = numpy.array([rt.roughWokX, rt.roughWokY]).T
+
+    # first associate fiducials and build
+    argFound, fidRoughDist = argNearestNeighbor(xyCMM, xyWokRough)
+    # print("max fiducial distance", numpy.max(distance))
+    xyFiducialCCD = xyCCD[argFound]
+
+    ft = FullTransfrom(xyFiducialCCD, xyCMM)
+    xyFiducialMeas = ft.apply(xyFiducialCCD)
+
+    xyCCD = centroids[["x", "y"]].to_numpy()
+    # transform all CCD detections to wok space
+    xyWokMeas = ft.apply(xyCCD)
+
+    xyExpectPos = expectedTargCoords[["xWokMetExpect", "yWokMetExpect"]].to_numpy()
+
+    argFound, distance = argNearestNeighbor(xyExpectPos, xyWokMeas)
+    xyWokRobotMeas = xyWokMeas[argFound]
+
+    expectedTargCoords["xWokMetMeas"] = xyWokRobotMeas[:, 0]
+    expectedTargCoords["yWokMetMeas"] = xyWokRobotMeas[:, 1]
+
+    dx = expectedTargCoords.xWokMetExpect - expectedTargCoords.xWokMetMeas
+    dy = expectedTargCoords.yWokMetExpect - expectedTargCoords.yWokMetMeas
+
+    rms = numpy.sqrt(numpy.mean(dx**2+dy**2))
+    print("rms full fit um", rms*1000)
+
+    return expectedTargCoords
 
 
 async def outAndBack(fps, seed, safe=True):
@@ -356,13 +539,14 @@ async def outAndBack(fps, seed, safe=True):
         betaLim = [165, 195]
     else:
         betaLim = None
-    forwardPath, reversePath = rg.getRandomPathPair(
-        alphaHome=alphaHome, betaHome=betaHome, betaLim=betaLim
-    )
+
+    expectedFiberPos = setRandomTargets(alphaHome, betaHome, betaLim)
+    forwardPath, reversePath = rg.getPathPair()
+
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
-    #for r in rg.robotDict.values():
-        #print("beta", r.betaPath[0])
+
+
     await ledOff(fps, "led1")
     await ledOff(fps, "led2")
     if not rg.didFail and rg.smoothCollisions == 0:
@@ -370,12 +554,12 @@ async def outAndBack(fps, seed, safe=True):
         # writePath(forwardPath, "forward", seed)
         # await fps.send_trajectory(forwardPath, use_sync_line=True)
         try:
-            await fps.send_trajectory(forwardPath, use_sync_line=True)
+            await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
             # await send_trajectory(fps, forwardPath, use_sync_line=True)
         except TrajectoryError as e:
             print("trajectory error on forward.  trying to resend")
             try :
-                await fps.send_trajectory(forwardPath, use_sync_line=True)
+                await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
             except TrajectoryError as e:
                 print("trajectory failed twice!!!!")
                 writePath(forwardPath, "forward", seed)
@@ -394,24 +578,24 @@ async def outAndBack(fps, seed, safe=True):
         await asyncio.sleep(1)
         print("exposing img 1")
         filename = await exposeFVC(exptime)
-        await appendDataToFits(filename, fps, rg, seed)
+        await writeProcFITS(filename, fps, rg, seed)
         await ledOn(fps, "led2")
         await asyncio.sleep(1)
         print("exposing img2")
         filename = await exposeFVC(exptime)
-        await appendDataToFits(filename, fps, rg, seed)
+        await writeProcFITS(filename, fps, rg, seed)
         await ledOff(fps, "led1")
         await ledOff(fps, "led2")
 
         print("sending reverse path")
         #writePath(reversePath, "reverse", seed)
         try:
-            await fps.send_trajectory(reversePath, use_sync_line=True)
-            # await send_trajectory(fps, reversePath, use_sync_line=True)
+            await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+            # await send_trajectory(fps, reversePath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
             print("trajectory error on reverse.  trying to resend")
             try :
-                await fps.send_trajectory(reversePath, use_sync_line=True)
+                await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
             except TrajectoryError as e:
                 print("trajectory failed twice!!!!")
                 writePath(reversePath, "reverse", seed)
@@ -429,24 +613,6 @@ async def outAndBack(fps, seed, safe=True):
         print("not sending path")
 
 
-# async def outAndBackUnsafe(fps):
-#     """Move robots out and back on potentially, but hopefully not
-#     colliding trajectories
-#     """
-#     print("out and back UNsafe")
-#     forwardPath, reversePath = rg.getRandomPathPair(
-#         alphaHome=alphaHome, betaHome=betaHome, betaSafe=False
-#     )
-
-#     print("didFail", rg.didFail)
-#     print("smooth collisions", rg.smoothCollisions)
-#     if not rg.didFail and rg.smoothCollisions == 0:
-#         await fps.send_trajectory(forwardPath, use_sync_line=False)
-#         await asyncio.sleep(25)
-#         await fps.send_trajectory(reversePath, use_sync_line=False)
-#     else:
-#         print("not sending path")
-
 async def main():
     seed = 9
     if seed is None:
@@ -462,7 +628,7 @@ async def main():
 
     # filename = await exposeFVC(exptime)
     # await asyncio.sleep(2)
-    # await appendDataToFits(filename, fps)
+    # await writeProcFITS(filename, fps)
     print("unwind")
     await unwindGrid(fps)
 
@@ -475,7 +641,7 @@ async def main():
 
     # for ii in range(100):
     ii = 0
-    while ii <500:
+    while ii <10:
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
