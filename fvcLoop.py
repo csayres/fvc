@@ -540,7 +540,7 @@ async def outAndBack(fps, seed, safe=True):
     else:
         betaLim = None
 
-    expectedFiberPos = setRandomTargets(alphaHome, betaHome, betaLim)
+    expectedFiberPos = setRandomTargets(rg, alphaHome, betaHome, betaLim)
     forwardPath, reversePath = rg.getPathPair()
 
     print("didFail", rg.didFail)
