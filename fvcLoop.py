@@ -229,13 +229,15 @@ def dataFrameToFitsRecord(df):
 #     return {"temp1":1, "temp2":2, "temp3":3}
 
 
-async def writeProcFITS(filePath, fps, rg, seed):
+async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords):
     d, oldname = os.path.split(filePath)
     newpath = os.path.join(d, "proc-" + oldname)
     f = fits.open(filePath)
 
     # invert columns
     f[1].data = f[1].data[:,::-1]
+
+    processImage(f[1].data, expectedTargCoords)
 
     tables = [
         ("positionerTable", positionerTableCalib),
@@ -474,6 +476,7 @@ def extract(imgData):
     data_sub = imgData - bkg_image
     objects = sep.extract(data_sub, 3.5, err=bkg.globalrms)
     objects = pd.DataFrame(objects)
+    print("got", len(objects), "centroids")
 
     # ecentricity
     objects["ecentricity"] = 1 - objects["b"] / objects["a"]
@@ -503,7 +506,7 @@ def processImage(imgData, expectedTargCoords):
 
     # first associate fiducials and build
     argFound, fidRoughDist = argNearestNeighbor(xyCMM, xyWokRough)
-    # print("max fiducial distance", numpy.max(distance))
+    print("max fiducial rough distance", numpy.max(fidRoughDist))
     xyFiducialCCD = xyCCD[argFound]
 
     ft = FullTransfrom(xyFiducialCCD, xyCMM)
@@ -515,7 +518,8 @@ def processImage(imgData, expectedTargCoords):
 
     xyExpectPos = expectedTargCoords[["xWokMetExpect", "yWokMetExpect"]].to_numpy()
 
-    argFound, distance = argNearestNeighbor(xyExpectPos, xyWokMeas)
+    argFound, metDist = argNearestNeighbor(xyExpectPos, xyWokMeas)
+    print("max metrology distance", numpy.max(metDist))
     xyWokRobotMeas = xyWokMeas[argFound]
 
     expectedTargCoords["xWokMetMeas"] = xyWokRobotMeas[:, 0]
@@ -540,12 +544,11 @@ async def outAndBack(fps, seed, safe=True):
     else:
         betaLim = None
 
-    expectedFiberPos = setRandomTargets(rg, alphaHome, betaHome, betaLim)
+    expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
     forwardPath, reversePath = rg.getPathPair()
 
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
-
 
     await ledOff(fps, "led1")
     await ledOff(fps, "led2")
@@ -557,33 +560,28 @@ async def outAndBack(fps, seed, safe=True):
             await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
             # await send_trajectory(fps, forwardPath, use_sync_line=True)
         except TrajectoryError as e:
-            print("trajectory error on forward.  trying to resend")
-            try :
-                await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
-            except TrajectoryError as e:
-                print("trajectory failed twice!!!!")
-                writePath(forwardPath, "forward", seed)
-                # note offending robots
-                t = e.trajectory.failed_positioners
-                with open("failed_positioners_forward_%i.txt"%seed, "w") as f:
-                    f.write(str(t))
-                print("failed on forward, 2x")
-                print("unwinding grid")
-                await unwindGrid(fps)
-                return
-            print("second try to send trajectory worked?!??!")
+            print("trajectory failed!!!!")
+            writePath(forwardPath, "forward", seed)
+            # note offending robots
+            t = e.trajectory.failed_positioners
+            with open("failed_positioners_forward_%i.txt"%seed, "w") as f:
+                f.write(str(t))
+            print("failed on forward")
+            print("unwinding grid")
+            await unwindGrid(fps)
+            return
 
         print("forward path done")
         await ledOn(fps, "led1")
         await asyncio.sleep(1)
         print("exposing img 1")
         filename = await exposeFVC(exptime)
-        await writeProcFITS(filename, fps, rg, seed)
+        await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
         await ledOn(fps, "led2")
         await asyncio.sleep(1)
         print("exposing img2")
         filename = await exposeFVC(exptime)
-        await writeProcFITS(filename, fps, rg, seed)
+        await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
         await ledOff(fps, "led1")
         await ledOff(fps, "led2")
 
@@ -593,20 +591,15 @@ async def outAndBack(fps, seed, safe=True):
             await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
             # await send_trajectory(fps, reversePath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
-            print("trajectory error on reverse.  trying to resend")
-            try :
-                await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
-            except TrajectoryError as e:
-                print("trajectory failed twice!!!!")
-                writePath(reversePath, "reverse", seed)
-                # note offending robots
-                t = e.trajectory.failed_positioners
-                with open("failed_positioners_reverse_%i.txt"%seed, "w") as f:
-                    f.write(str(t))
-                print("unwinding grid")
-                await unwindGrid(fps)
-                return
-            print("second try to send trajectory worked?!??!")
+            print("trajectory failed!!!!")
+            writePath(reversePath, "reverse", seed)
+            # note offending robots
+            t = e.trajectory.failed_positioners
+            with open("failed_positioners_reverse_%i.txt"%seed, "w") as f:
+                f.write(str(t))
+            print("unwinding grid")
+            await unwindGrid(fps)
+            return
 
         # await fps.send_trajectory(reversePath, use_sync_line=True)
     else:
@@ -641,7 +634,7 @@ async def main():
 
     # for ii in range(100):
     ii = 0
-    while ii <10:
+    while ii <3:
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
