@@ -66,12 +66,13 @@ class RoughTransform(object):
         xCCD = centroids.x.to_numpy()
         yCCD = centroids.y.to_numpy()
 
-        xWok = numpy.array(
+        xWok = numpy.concatenate(
             [expectedTargCoords.xWokMetExpect.to_numpy(), xCMM]
-        ).flatten()
-        yWok = numpy.array(
+        )
+        yWok = numpy.concatenate(
             [expectedTargCoords.yWokMetExpect.to_numpy(), yCMM]
-        ).flatten()
+        )
+        
 
         self.meanCCDX = numpy.mean(xCCD)
         self.meanCCDY = numpy.mean(yCCD)
@@ -487,7 +488,8 @@ def extract(imgData):
     objects["intercept"] = objects["y"] - objects["slope"] * objects["x"]
 
     # ignore everything less than 100 pixels
-    objects = objects[objects["npix"] > 100]
+    # something changed when rick bumped things?
+    #objects = objects[objects["npix"] > 100]
 
     # filter on most eliptic, this is an assumption!!!!
     # objects["outerFIF"] = objects.ecentricity > 0.15
@@ -503,6 +505,7 @@ def processImage(imgData, expectedTargCoords):
     # correct centroid with the correct fiducial...
     rt = RoughTransform(centroids, expectedTargCoords)
     xyWokRough = numpy.array([rt.roughWokX, rt.roughWokY]).T
+
 
     # first associate fiducials and build
     argFound, fidRoughDist = argNearestNeighbor(xyCMM, xyWokRough)
