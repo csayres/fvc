@@ -17,6 +17,7 @@ from coordio.defaults import positionerTableCalib, wokCoordsCalib, fiducialCoord
 import sep
 from skimage.transform import SimilarityTransform
 from coordio.zhaoburge import fitZhaoBurge, getZhaoBurgeXY
+import matplotlib.pyplot as plt
 
 # from processImgs import SimTrans, argNearestNeighbor, FullTransform
 
@@ -61,17 +62,13 @@ def argNearestNeighbor(xyA, xyB):
 
 
 class RoughTransform(object):
-    def __init__(self, centroids, expectedTargCoords):
+    # def __init__(self, centroids, expectedTargCoords):
+    def __init__(self, xyCCD, xyWok):
         # scale pixels to mm roughly
-        xCCD = centroids.x.to_numpy()
-        yCCD = centroids.y.to_numpy()
-
-        xWok = numpy.concatenate(
-            [expectedTargCoords.xWokMetExpect.to_numpy(), xCMM]
-        )
-        yWok = numpy.concatenate(
-            [expectedTargCoords.yWokMetExpect.to_numpy(), yCMM]
-        )
+        xCCD = xyCCD[:,0]
+        yCCD = xyCCD[:,1]
+        xWok = xyWok[:,0]
+        yWok = xyWok[:,1]
         
 
         self.meanCCDX = numpy.mean(xCCD)
@@ -86,10 +83,12 @@ class RoughTransform(object):
         self.roughWokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
         self.roughWokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
 
-    def apply(self, xCCD, yCCD):
+    def apply(self, xyCCD):
+        xCCD = xyCCD[:,0]
+        yCCD = xyCCD[:,1]
         wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
         wokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
-        return wokX, wokY
+        return numpy.array([wokX, wokY]).T
 
 
 class FullTransfrom(object):
@@ -238,7 +237,7 @@ async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords):
     # invert columns
     f[1].data = f[1].data[:,::-1]
 
-    processImage(f[1].data, expectedTargCoords)
+    processImage(f[1].data, expectedTargCoords, newpath)
 
     tables = [
         ("positionerTable", positionerTableCalib),
@@ -497,14 +496,25 @@ def extract(imgData):
     return objects
 
 
-def processImage(imgData, expectedTargCoords):
+def processImage(imgData, expectedTargCoords, newpath):
     centroids = extract(imgData)
     xyCCD = centroids[["x", "y"]].to_numpy()
 
     # just to get close enough to associate the
     # correct centroid with the correct fiducial...
-    rt = RoughTransform(centroids, expectedTargCoords)
-    xyWokRough = numpy.array([rt.roughWokX, rt.roughWokY]).T
+    xWokExpect = numpy.concat([xCMM, expectedTargCoords.xWokMetExpect.to_numpy()])
+    yWokExpect = numpy.concat([yCMM, expectedTargCoords.yWokMetExpect.to_numpy()])
+    xyWokExpect = numpy.array([xWokExpect, yWokExpect]).T
+
+    rt = RoughTransform(xyCCD, xyWokExpect)
+    xyWokRough = rt.apply(xyCCD)
+
+    plt.figure(figsize=(8,8))
+    plt.plot(xyCCD[:,0], xyCCD[:,1], 'ok')
+    plt.plot(xyWokRough[:,0], xyWokRough[:,1], 'xr')
+    plt.axis("equal")
+    plt.savefig(newpath+"rough.png", dpi=350)
+    plt.close()
 
 
     # first associate fiducials and build
