@@ -38,7 +38,7 @@ betaHome = 180
 seed = None
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = True
-NITER = 1
+NITER = 300
 
 xCMM = fiducialCoordsCalib.xWok.to_numpy()
 yCMM = fiducialCoordsCalib.yWok.to_numpy()
