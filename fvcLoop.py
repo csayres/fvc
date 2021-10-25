@@ -15,7 +15,7 @@ from kaiju.robotGrid import RobotGridCalib
 from coordio.defaults import positionerTableCalib, wokCoordsCalib, fiducialCoordsCalib
 # from baslerCam import BaslerCamera, BaslerCameraSystem, config
 import sep
-from skimage.transform import SimilarityTransform
+from skimage.transform import SimilarityTransform, AffineTransform
 from coordio.zhaoburge import fitZhaoBurge, getZhaoBurgeXY
 import matplotlib.pyplot as plt
 
@@ -38,6 +38,7 @@ betaHome = 180
 seed = None
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = True
+NITER = 1
 
 xCMM = fiducialCoordsCalib.xWok.to_numpy()
 yCMM = fiducialCoordsCalib.yWok.to_numpy()
@@ -93,11 +94,12 @@ class RoughTransform(object):
 
 class FullTransfrom(object):
     # use fiducials to fit this
-    polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int)
-
+    #polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int)
+    polids = numpy.array([0,1,2,3,4,5,6,9,20,27,28,29,30],dtype=int) # desi terms
     def __init__(self, xyCCD, xyWok):
         # first fit a transrotscale model
-        self.simTrans = SimilarityTransform()
+        #self.simTrans = SimilaityTransform()
+        self.simTrans = AffineTransform()
         self.simTrans.estimate(xyCCD, xyWok)
 
         # apply the model to the data
@@ -476,7 +478,6 @@ def extract(imgData):
     data_sub = imgData - bkg_image
     objects = sep.extract(data_sub, 3.5, err=bkg.globalrms)
     objects = pd.DataFrame(objects)
-    print("got", len(objects), "centroids")
 
     # ecentricity
     objects["ecentricity"] = 1 - objects["b"] / objects["a"]
@@ -490,6 +491,8 @@ def extract(imgData):
     # something changed when rick bumped things?
     objects = objects[objects["npix"] > 100]
 
+
+    print("got", len(objects), "centroids")
     # filter on most eliptic, this is an assumption!!!!
     # objects["outerFIF"] = objects.ecentricity > 0.15
 
@@ -502,32 +505,53 @@ def processImage(imgData, expectedTargCoords, newpath):
 
     # just to get close enough to associate the
     # correct centroid with the correct fiducial...
-    xWokExpect = numpy.concat([xCMM, expectedTargCoords.xWokMetExpect.to_numpy()])
-    yWokExpect = numpy.concat([yCMM, expectedTargCoords.yWokMetExpect.to_numpy()])
+    xWokExpect = numpy.concatenate([xCMM, expectedTargCoords.xWokMetExpect.to_numpy()])
+    yWokExpect = numpy.concatenate([yCMM, expectedTargCoords.yWokMetExpect.to_numpy()])
     xyWokExpect = numpy.array([xWokExpect, yWokExpect]).T
 
     rt = RoughTransform(xyCCD, xyWokExpect)
     xyWokRough = rt.apply(xyCCD)
 
-    plt.figure(figsize=(8,8))
-    plt.plot(xyCCD[:,0], xyCCD[:,1], 'ok')
-    plt.plot(xyWokRough[:,0], xyWokRough[:,1], 'xr')
-    plt.axis("equal")
-    plt.savefig(newpath+"rough.png", dpi=350)
-    plt.close()
-
-
     # first associate fiducials and build
     argFound, fidRoughDist = argNearestNeighbor(xyCMM, xyWokRough)
     print("max fiducial rough distance", numpy.max(fidRoughDist))
     xyFiducialCCD = xyCCD[argFound]
+    xyFiducialWokRough = xyWokRough[argFound]
+
+
+    plt.figure(figsize=(8,8))
+    plt.title("rough transform")
+    plt.plot(xyWokRough[:,0], xyWokRough[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
+    plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
+    # overplot fiducials
+    plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
+    for cmm, rough in zip(xyCMM, xyFiducialWokRough):
+        plt.plot([cmm[0], rough[0]], [cmm[1], rough[1]], "-k")
+    plt.axis("equal")
+    plt.legend()
+    plt.savefig(newpath+"rough.png", dpi=350)
+    plt.close()
 
     ft = FullTransfrom(xyFiducialCCD, xyCMM)
+    print("full trans bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
+
+    xyWokMeas = ft.apply(xyCCD)
+    plt.figure(figsize=(8,8))
+    plt.title("full transform")
+    plt.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
+    plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
+    # overplot fiducials
+    plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
+    plt.axis("equal")
+    plt.legend()
+    plt.savefig(newpath+"full.png", dpi=350)
+    plt.close()
+
+
+
     xyFiducialMeas = ft.apply(xyFiducialCCD)
 
-    xyCCD = centroids[["x", "y"]].to_numpy()
     # transform all CCD detections to wok space
-    xyWokMeas = ft.apply(xyCCD)
 
     xyExpectPos = expectedTargCoords[["xWokMetExpect", "yWokMetExpect"]].to_numpy()
 
@@ -590,11 +614,11 @@ async def outAndBack(fps, seed, safe=True):
         print("exposing img 1")
         filename = await exposeFVC(exptime)
         await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
-        await ledOn(fps, "led2")
-        await asyncio.sleep(1)
-        print("exposing img2")
-        filename = await exposeFVC(exptime)
-        await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
+        #await ledOn(fps, "led2")
+        #await asyncio.sleep(1)
+        #print("exposing img2")
+        #filename = await exposeFVC(exptime)
+        #await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
         await ledOff(fps, "led1")
         await ledOff(fps, "led2")
 
@@ -647,7 +671,7 @@ async def main():
 
     # for ii in range(100):
     ii = 0
-    while ii <3:
+    while ii < NITER:
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
