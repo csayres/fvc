@@ -520,7 +520,7 @@ def processImage(imgData, expectedTargCoords, newpath):
 
 
     plt.figure(figsize=(8,8))
-    plt.title("rough transform")
+    plt.title("rough fiducial association")
     plt.plot(xyWokRough[:,0], xyWokRough[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
     plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
     # overplot fiducials
@@ -529,22 +529,61 @@ def processImage(imgData, expectedTargCoords, newpath):
         plt.plot([cmm[0], rough[0]], [cmm[1], rough[1]], "-k")
     plt.axis("equal")
     plt.legend()
-    plt.savefig(newpath+"rough.png", dpi=350)
+    plt.savefig(newpath+"roughassoc.png", dpi=350)
     plt.close()
 
     ft = FullTransfrom(xyFiducialCCD, xyCMM)
-    print("full trans bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
-
+    print("full trans 1 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
     xyWokMeas = ft.apply(xyCCD)
+
     plt.figure(figsize=(8,8))
-    plt.title("full transform")
+    plt.title("full transform 1")
     plt.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
     plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
     # overplot fiducials
     plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
     plt.axis("equal")
     plt.legend()
-    plt.savefig(newpath+"full.png", dpi=350)
+    plt.savefig(newpath+"full1.png", dpi=350)
+    plt.close()
+
+    # re-associate fiducials, some could have been wrongly associated in
+    # first fit but second fit should be better?
+    argFound, fidRoughDist = argNearestNeighbor(xyCMM, xyWokMeas)
+    print("max fiducial fit 2 distance", numpy.max(fidRoughDist))
+    xyFiducialCCD = xyCCD[argFound]  # over writing
+    xyFiducialWokRefine = xyWokMeas[argFound]
+
+
+    plt.figure(figsize=(8,8))
+    plt.title("refined fiducial association")
+    plt.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
+    plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
+    # overplot fiducials
+    plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
+    for cmm, rough in zip(xyCMM, xyFiducialWokRefine):
+        plt.plot([cmm[0], rough[0]], [cmm[1], rough[1]], "-k")
+    plt.axis("equal")
+    plt.legend()
+    plt.savefig(newpath+"refineassoc.png", dpi=350)
+    plt.close()
+
+    # try a new transform
+    ft = FullTransfrom(xyFiducialCCD, xyCMM)
+    print("full trans 1 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
+    xyWokMeas = ft.apply(xyCCD) # overwrite
+
+
+    xyWokMeas = ft.apply(xyCCD)
+    plt.figure(figsize=(8,8))
+    plt.title("full transform 2")
+    plt.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
+    plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
+    # overplot fiducials
+    plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
+    plt.axis("equal")
+    plt.legend()
+    plt.savefig(newpath+"full2.png", dpi=350)
     plt.close()
 
 
