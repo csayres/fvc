@@ -379,7 +379,7 @@ async def separate(fps):
     """
     rg = getGrid(seed=0)
     print("escape")
-    await updateCurrentPos(fps)
+    await updateCurrentPos(fps, rg)
     rg.pathGenEscape(escapeDeg)
     forwardPath, reversePath = rg.getPathPair()
     print("didFail", rg.didFail)
