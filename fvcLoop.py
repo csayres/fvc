@@ -37,7 +37,7 @@ alphaHome = 0
 betaHome = 180
 seed = None
 escapeDeg = 20  # 20 degrees of motion to escape
-use_sync_line = True
+use_sync_line = False
 NITER = 1
 DOEXP = False
 
@@ -164,9 +164,10 @@ class FullTransfrom(object):
 def getGrid(seed):
     rg = RobotGridCalib(angStep, collisionBuffer, epsilon, seed)
 
-    rg.robotDict[1097].setAlphaBeta(0, 180.0001)
-    rg.robotDict[1097].setDestinationAlphaBeta(0, 180.0001)
-    rg.robotDict[1097].isOffline = True
+    # rg.robotDict[1097].setAlphaBeta(0, 180.0001)
+    # rg.robotDict[1097].setDestinationAlphaBeta(0, 180.0001)
+    # rg.robotDict[1097].isOffline = True
+
     return rg
 
 
@@ -764,7 +765,8 @@ async def main():
         ii += 1
         seed += 1
         print("\n\niter %i\n\n"%ii)
-        await outAndBack(fps, seed, safe=False)
+        # await outAndBack(fps, seed, safe=False)
+        await outAndEscape(fps, seed)
 
 
     await fps.shutdown()
