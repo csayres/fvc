@@ -38,7 +38,8 @@ betaHome = 180
 seed = None
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = True
-NITER = 300
+NITER = 1
+DOEXP = False
 
 xCMM = fiducialCoordsCalib.xWok.to_numpy()
 yCMM = fiducialCoordsCalib.yWok.to_numpy()
@@ -650,9 +651,10 @@ async def outAndBack(fps, seed, safe=True):
         print("forward path done")
         await ledOn(fps, "led1")
         await asyncio.sleep(1)
-        print("exposing img 1")
-        filename = await exposeFVC(exptime)
-        await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
+        if DOEXP:
+            print("exposing img 1")
+            filename = await exposeFVC(exptime)
+            await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
         #await ledOn(fps, "led2")
         #await asyncio.sleep(1)
         #print("exposing img2")
