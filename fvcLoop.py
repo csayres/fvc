@@ -384,7 +384,7 @@ async def separate(fps):
     forwardPath, reversePath = rg.getPathPair()
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
-    await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
+    await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
 
 
 async def unwindGrid(fps):
