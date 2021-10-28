@@ -38,9 +38,9 @@ alphaHome = 0
 seed = None
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
-NITER = 1
+NITER = 50
 DOEXP = False
-SPEED = 0.5 #RPM at output
+SPEED = 2 #RPM at output
 LEFT_HAND = True
 
 if LEFT_HAND:
