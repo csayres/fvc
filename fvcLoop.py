@@ -34,13 +34,20 @@ UNWINDONLY = False
 TAKE_IMGS = False
 LED_VALUE = 1
 alphaHome = 0
-betaHome = 180
+# betaHome = 180
 seed = None
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
 NITER = 1
 DOEXP = False
-SPEED = 2 #RPM at output
+SPEED = 0.5 #RPM at output
+LEFT_HAND = True
+
+if LEFT_HAND:
+    alphaHome = 360
+else:
+    alphaHome = 0
+betaHome = 180
 
 xCMM = fiducialCoordsCalib.xWok.to_numpy()
 yCMM = fiducialCoordsCalib.yWok.to_numpy()
@@ -168,7 +175,9 @@ def getGrid(seed):
     # rg.robotDict[1097].setAlphaBeta(0, 180.0001)
     # rg.robotDict[1097].setDestinationAlphaBeta(0, 180.0001)
     # rg.robotDict[1097].isOffline = True
-
+    if LEFT_HAND:
+        for robot in rg.robotDict.values():
+            robot.lefthanded = True
     return rg
 
 
@@ -423,7 +432,7 @@ def writePath(pathdict, direction, seed):
         pickle.dump(pathdict, f)
 
 
-def setRandomTargets(rg, alphaHome=0, betaHome=180, betaLim=None):
+def setRandomTargets(rg, alphaHome, betaHome, betaLim=None):
     for robot in rg.robotDict.values():
         robot.setDestinationAlphaBeta(alphaHome, betaHome)
         if robot.isOffline:
