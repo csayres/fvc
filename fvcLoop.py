@@ -384,13 +384,13 @@ async def separate(fps):
     forwardPath, reversePath = rg.getPathPair()
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
-    with open("currpos.pkl", "wb") as f:
-        pickle.dump(currPosDF, f)
-    with open("forwardPath.pkl", "wb") as f:
-        pickle.dump(forwardPath, f)
-    with open("reversePath.pkl", "wb") as f:
-        pickle.dump(reversePath, f)
-    #await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+    # with open("currpos.pkl", "wb") as f:
+    #     pickle.dump(currPosDF, f)
+    # with open("forwardPath.pkl", "wb") as f:
+    #     pickle.dump(forwardPath, f)
+    # with open("reversePath.pkl", "wb") as f:
+    #     pickle.dump(reversePath, f)
+    await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
 
 
 async def unwindGrid(fps):
