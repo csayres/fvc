@@ -406,6 +406,7 @@ async def unwindGrid(fps):
     print("unwind grid")
     await updateCurrentPos(fps, rg)
     # path generated from current position
+    rg.pathGenGreedy()
     forwardPath, reversePath = rg.getPathPair()
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
@@ -629,6 +630,7 @@ async def outAndBack(fps, seed, safe=True):
         betaLim = None
 
     expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
+    rg.pathGenGreedy()
     forwardPath, reversePath = rg.getPathPair()
 
     print("didFail", rg.didFail)
@@ -700,6 +702,7 @@ async def outAndEscape(fps, seed):
     betaLim = None
 
     expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
+    rg.pathGenGreedy()
     forwardPath, reversePath = rg.getPathPair()
 
     print("didFail", rg.didFail)
