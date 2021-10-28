@@ -40,6 +40,7 @@ escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
 NITER = 1
 DOEXP = False
+SPEED = 2 #RPM at output
 
 xCMM = fiducialCoordsCalib.xWok.to_numpy()
 yCMM = fiducialCoordsCalib.yWok.to_numpy()
@@ -381,7 +382,7 @@ async def separate(fps):
     print("escape")
     currPosDF = await updateCurrentPos(fps, rg)
     rg.pathGenEscape(escapeDeg)
-    forwardPath, reversePath = rg.getPathPair()
+    forwardPath, reversePath = rg.getPathPair(speed=SPEED)
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
     # with open("currpos.pkl", "wb") as f:
@@ -407,7 +408,7 @@ async def unwindGrid(fps):
     await updateCurrentPos(fps, rg)
     # path generated from current position
     rg.pathGenGreedy()
-    forwardPath, reversePath = rg.getPathPair()
+    forwardPath, reversePath = rg.getPathPair(speed=SPEED)
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
     # print(forwardPath)
@@ -631,7 +632,7 @@ async def outAndBack(fps, seed, safe=True):
 
     expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
     rg.pathGenGreedy()
-    forwardPath, reversePath = rg.getPathPair()
+    forwardPath, reversePath = rg.getPathPair(speed=SPEED)
 
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
@@ -703,7 +704,7 @@ async def outAndEscape(fps, seed):
 
     expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
     rg.pathGenGreedy()
-    forwardPath, reversePath = rg.getPathPair()
+    forwardPath, reversePath = rg.getPathPair(speed=SPEED)
 
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
