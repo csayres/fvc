@@ -12,7 +12,7 @@ from jaeger.commands.trajectory import send_trajectory
 from jaeger.exceptions import FPSLockedError, TrajectoryError
 # log.sh.setLevel(5)
 from kaiju.robotGrid import RobotGridCalib
-from coordio.defaults import positionerTableFile, wokCoordsFile, fiducialCoordsFile
+from coordio.defaults import positionerTableFile, wokCoordFile, fiducialCoords
 # from baslerCam import BaslerCamera, BaslerCameraSystem, config
 import sep
 from skimage.transform import SimilarityTransform, AffineTransform
