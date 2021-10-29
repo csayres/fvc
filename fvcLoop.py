@@ -49,8 +49,8 @@ else:
     alphaHome = 0
 betaHome = 180
 
-xCMM = fiducialCoordsCalib.xWok.to_numpy()
-yCMM = fiducialCoordsCalib.yWok.to_numpy()
+xCMM = fiducialCoords.xWok.to_numpy()
+yCMM = fiducialCoords.yWok.to_numpy()
 xyCMM = numpy.array([xCMM, yCMM]).T
 
 
@@ -254,9 +254,9 @@ async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords):
     processImage(f[1].data, expectedTargCoords, newpath)
 
     tables = [
-        ("positionerTable", positionerTableCalib),
-        ("wokCoords", wokCoordsCalib),
-        ("fiducialCoords", fiducialCoordsCalib)
+        ("positionerTable", positionerTableFile),
+        ("wokCoords", wokCoordFile),
+        ("fiducialCoords", fiducialCoords)
     ]
 
     for name, tab in tables:
