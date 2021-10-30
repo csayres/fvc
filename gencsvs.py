@@ -1,5 +1,5 @@
 import coordio.defaults
-from coordio.defaults import designRef, POSITIONER_HEIGHT, IHAT, JHAT, KHAT
+from coordio.defaults import parseDesignRef, POSITIONER_HEIGHT, IHAT, JHAT, KHAT
 from coordio.defaults import wokCoords
 from coordio.conv import tangentToWok
 import fitsio
@@ -18,6 +18,8 @@ import os
 # c1c2dist = 10 # mm
 # imgScale = c1c2dist / numpy.linalg.norm(c1-c2)
 # print("imgScale", imgScale)
+
+designRef = parseDesignRef()
 
 class CSVBuilder(object):
     wokName = "default"
@@ -642,8 +644,14 @@ def assign(csvObj, assignmentFile):
 
     positionerTable.reset_index(inplace=True)
     positionerTable.drop(columns=["index", "level_0"], inplace=True)
-    csvObj.positionerTable = positionerTable
 
+    floatCols = [
+        "alphaArmLen","metX","metY","apX","apY","bossX","bossY",
+        "alphaOffset","betaOffset","dx","dy"
+    ]
+
+    positionerTable[floatCols] = positionerTable[floatCols].applymap(float)
+    csvObj.positionerTable = positionerTable
     # import pdb; pdb.set_trace()
 
 # class AssignmentAPO(Assignment):
@@ -674,13 +682,22 @@ if __name__ == "__main__":
 
 
     # osu mini wok
+    # csvObj = FlatWokNominal()
+    # assign(csvObj, "miniwok_OSU_2021Sep20.csv")
+    # # no fiducials in the osu miniwok
+    # csvObj.fiducialCoords = csvObj.fiducialCoords[0:0]
+    # # print(len(csvObj.positionerTable))
+    # # import pdb; pdb.set_trace()
+    # csvObj.write("/Users/csayres/wokCalib/osuMiniWok")
+
+    # oct 2021 apo assignments
     csvObj = FlatWokNominal()
-    assign(csvObj, "miniwok_OSU_2021Sep20.csv")
-    # no fiducials in the osu miniwok
-    csvObj.fiducialCoords = csvObj.fiducialCoords[0:0]
-    # print(len(csvObj.positionerTable))
+    cmmMeasTable = getCMMFidMeas("FPS_Sloan_CMM_20210504.xlsx", flat=True)
+    assign(csvObj, "SloanFPS_Assignments_2021Oct22.csv")
+    csvObj.fiducialCoords = cmmMeasTable
+    csvObj.write("/Users/csayres/code/fps_calibrations/apo/wok_calibs/sloanFlatCMM")
+
     # import pdb; pdb.set_trace()
-    csvObj.write("/Users/csayres/wokCalib/osuMiniWok")
 
 
 

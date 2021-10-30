@@ -29,7 +29,6 @@ angStep = 0.05          # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
 collisionBuffer = 2.4    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.2
-# CONTINUOUS = False
 UNWINDONLY = False
 TAKE_IMGS = False
 LED_VALUE = 1
