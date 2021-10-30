@@ -277,23 +277,24 @@ async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords, doProcess=T
     _startAlpha = []
     _startBeta = []
 
-    for posID in currPos.positionerID:
-        robot = rg.robotDict[posID]
-        _cmdAlpha.append(robot.alphaPath[0][1])
-        _cmdBeta.append(robot.betaPath[0][1])
-        _startAlpha.append(robot.alphaPath[-1][1])
-        _startBeta.append(robot.betaPath[-1][1])
+    if len(rg.robotDict.values()[0].alphaPath[0] > 0):
+        for posID in currPos.positionerID:
+            robot = rg.robotDict[posID]
+            _cmdAlpha.append(robot.alphaPath[0][1])
+            _cmdBeta.append(robot.betaPath[0][1])
+            _startAlpha.append(robot.alphaPath[-1][1])
+            _startBeta.append(robot.betaPath[-1][1])
 
-    currPos["cmdAlpha"] = _cmdAlpha
-    currPos["cmdBeta"] = _cmdBeta
-    currPos["startAlpha"] = _startAlpha
-    currPos["startBeta"] = _startBeta
+        currPos["cmdAlpha"] = _cmdAlpha
+        currPos["cmdBeta"] = _cmdBeta
+        currPos["startAlpha"] = _startAlpha
+        currPos["startBeta"] = _startBeta
 
-    rec = dataFrameToFitsRecord(currPos)
+        rec = dataFrameToFitsRecord(currPos)
 
-    binTable = fits.BinTableHDU(rec, name="posAngles")
+        binTable = fits.BinTableHDU(rec, name="posAngles")
 
-    f.append(binTable)
+        f.append(binTable)
 
     f.writeto(newpath, checksum=True)
 
