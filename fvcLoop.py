@@ -542,7 +542,12 @@ def processImage(imgData, expectedTargCoords, newpath):
     xyWokRough = rt.apply(xyCCD)
 
     # first associate fiducials and build
-    argFound, fidRoughDist = argNearestNeighbor(xyCMM, xyWokRough)
+    # first round just use outer fiducials
+    rCMM = numpy.sqrt(xyCMM[:,0]**2+xyCMM[:,1]**2)
+    keep = rCMM > 310
+    xyCMMouter = xyCMM[keep, :]
+    # argFound, fidRoughDist = argNearestNeighbor(xyCMM, xyWokRough)
+    argFound, fidRoughDist = argNearestNeighbor(xyCMMouter, xyWokRough)
     print("max fiducial rough distance", numpy.max(fidRoughDist))
     xyFiducialCCD = xyCCD[argFound]
     xyFiducialWokRough = xyWokRough[argFound]
