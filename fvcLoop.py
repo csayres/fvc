@@ -161,15 +161,19 @@ class FullTransfrom(object):
         self.errs = xyWok - xyWokFit
         self.rms = numpy.sqrt(numpy.mean(self.errs**2))
 
-    def apply(self, xyCCD):
+    def apply(self, xyCCD, zb=True):
         # return wok xy
         xySimTransFit = self.simTrans(xyCCD)
-        dx, dy = getZhaoBurgeXY(
-            self.polids, self.coeffs, xySimTransFit[:,0], xySimTransFit[:,1]
-        )
-        xWokFit = xySimTransFit[:,0] + dx
-        yWokFit = xySimTransFit[:,1] + dy
-        xyWokFit = numpy.array([xWokFit, yWokFit]).T
+
+        if zb:
+            dx, dy = getZhaoBurgeXY(
+                self.polids, self.coeffs, xySimTransFit[:,0], xySimTransFit[:,1]
+            )
+            xWokFit = xySimTransFit[:,0] + dx
+            yWokFit = xySimTransFit[:,1] + dy
+            xyWokFit = numpy.array([xWokFit, yWokFit]).T
+        else:
+            xyWokFit = xySimTransFit
         return xyWokFit
 
 # globals
@@ -559,7 +563,7 @@ def processImage(imgData, expectedTargCoords, newpath):
     plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
     # overplot fiducials
     plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
-    for cmm, rough in zip(xyCMM, xyFiducialWokRough):
+    for cmm, rough in zip(xyCMMouter, xyFiducialWokRough):
         plt.plot([cmm[0], rough[0]], [cmm[1], rough[1]], "-k")
     plt.axis("equal")
     plt.legend()
@@ -568,7 +572,7 @@ def processImage(imgData, expectedTargCoords, newpath):
 
     ft = FullTransfrom(xyFiducialCCD, xyCMMouter)
     print("full trans 1 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
-    xyWokMeas = ft.apply(xyCCD)
+    xyWokMeas = ft.apply(xyCCD, zb=False)
 
     plt.figure(figsize=(8,8))
     plt.title("full transform 1")
