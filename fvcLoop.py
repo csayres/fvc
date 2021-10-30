@@ -433,23 +433,7 @@ def writePath(pathdict, direction, seed):
         pickle.dump(pathdict, f)
 
 
-def setRandomTargets(rg, alphaHome, betaHome, betaLim=None):
-    for robot in rg.robotDict.values():
-        robot.setDestinationAlphaBeta(alphaHome, betaHome)
-        if robot.isOffline:
-            continue
-        if betaLim is not None:
-            alpha = numpy.random.uniform(0, 359.99)
-            beta = numpy.random.uniform(betaLim[0], betaLim[1])
-            robot.setAlphaBeta(alpha, beta)
-        else:
-            robot.setXYUniform()
-
-    if betaLim is not None and rg.getNCollisions() > 0:
-        raise RuntimeError("betaLim specified, but collisions present")
-    else:
-        rg.decollideGrid()
-
+def getTargetCoords(rg):
     # return the desired xyWok positions for the metrology
     # fiber for each robot, move this stuff to robot grid...
     robotID = []
@@ -486,6 +470,26 @@ def setRandomTargets(rg, alphaHome, betaHome, betaLim=None):
             "yWokBossExpect": yWokBossExpect,
         }
     )
+
+def setRandomTargets(rg, alphaHome, betaHome, betaLim=None):
+    for robot in rg.robotDict.values():
+        robot.setDestinationAlphaBeta(alphaHome, betaHome)
+        if robot.isOffline:
+            continue
+        if betaLim is not None:
+            alpha = numpy.random.uniform(0, 359.99)
+            beta = numpy.random.uniform(betaLim[0], betaLim[1])
+            robot.setAlphaBeta(alpha, beta)
+        else:
+            robot.setXYUniform()
+
+    if betaLim is not None and rg.getNCollisions() > 0:
+        raise RuntimeError("betaLim specified, but collisions present")
+    else:
+        rg.decollideGrid()
+
+    return getTargetCoords(rg)
+
 
 
 def extract(imgData):
