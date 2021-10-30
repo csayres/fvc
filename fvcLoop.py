@@ -277,7 +277,7 @@ async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords, doProcess=T
     _startAlpha = []
     _startBeta = []
 
-    if len(list(rg.robotDict.values())[0].alphaPath > 0):
+    if len(list(rg.robotDict.values())[0].alphaPath) > 0:
         for posID in currPos.positionerID:
             robot = rg.robotDict[posID]
             _cmdAlpha.append(robot.alphaPath[0][1])
