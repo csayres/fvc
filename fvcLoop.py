@@ -97,7 +97,7 @@ class RoughTransform(object):
         roughWokR = numpy.sqrt(roughWokX**2 + roughWokY**2)
         # roughWokTheta = numpy.arctan2(roughWokY, roughWokX)
 
-        keep = roughWokR > 305
+        keep = roughWokR > 320
         roughWokX = roughWokX[keep]
         roughWokY = roughWokY[keep]
         xCCD = xCCD[keep]
@@ -107,6 +107,8 @@ class RoughTransform(object):
         amin, dist = argNearestNeighbor(xyWokRough, xyWok)
 
         xyWok = xyWok[amin, :]
+
+        print("number of coords for rough trans", len(xyWok))
 
         self.simTrans = SimilarityTransform()
         self.simTrans.estimate(xyCCD, xyWok)
