@@ -242,7 +242,7 @@ def dataFrameToFitsRecord(df):
 #     return {"temp1":1, "temp2":2, "temp3":3}
 
 
-async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords):
+async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords, doProcess=True):
     d, oldname = os.path.split(filePath)
     newpath = os.path.join(d, "proc-" + oldname)
     f = fits.open(filePath)
@@ -250,7 +250,8 @@ async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords):
     # invert columns
     f[1].data = f[1].data[:,::-1]
 
-    processImage(f[1].data, expectedTargCoords, newpath)
+    if doProcess:
+        processImage(f[1].data, expectedTargCoords, newpath)
 
     tables = [
         ("positionerTable", positionerTableFile),
