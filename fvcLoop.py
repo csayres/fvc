@@ -656,9 +656,11 @@ async def outAndBack(fps, seed, safe=True):
     """Move robots out and back on non-colliding trajectories
     """
     rg = getGrid(seed)
+
     print("out and back safe=%s seed=%i"%(str(safe), seed))
     if safe:
         betaLim = [165, 195]
+        numpy.random.seed(seed)
     else:
         betaLim = None
 
@@ -727,53 +729,53 @@ async def outAndBack(fps, seed, safe=True):
         print("not sending path")
 
 
-async def outAndEscape(fps, seed):
-    """Move robots out and back on non-colliding trajectories
-    """
-    rg = getGrid(seed)
-    print("out and escape seed=%i"%(seed))
+# async def outAndEscape(fps, seed):
+#     """Move robots out and back on non-colliding trajectories
+#     """
+#     rg = getGrid(seed)
+#     print("out and escape seed=%i"%(seed))
 
-    betaLim = None
+#     betaLim = None
 
-    expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
-    rg.pathGenGreedy()
-    forwardPath, reversePath = rg.getPathPair(speed=SPEED)
+#     expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
+#     rg.pathGenGreedy()
+#     forwardPath, reversePath = rg.getPathPair(speed=SPEED)
 
-    print("didFail", rg.didFail)
-    print("smooth collisions", rg.smoothCollisions)
+#     print("didFail", rg.didFail)
+#     print("smooth collisions", rg.smoothCollisions)
 
-    if not rg.didFail and rg.smoothCollisions == 0:
-        print("sending forward path")
-        # writePath(forwardPath, "forward", seed)
-        # await fps.send_trajectory(forwardPath, use_sync_line=True)
-        try:
-            await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
-            # await send_trajectory(fps, forwardPath, use_sync_line=True)
-        except TrajectoryError as e:
-            print("trajectory failed!!!!")
-            writePath(forwardPath, "forward", seed)
-            # note offending robots
-            t = e.trajectory.failed_positioners
-            with open("failed_positioners_forward_%i.txt"%seed, "w") as f:
-                f.write(str(t))
-            print("failed on forward")
-            print("unwinding grid")
-            await unwindGrid(fps)
-            return
+#     if not rg.didFail and rg.smoothCollisions == 0:
+#         print("sending forward path")
+#         # writePath(forwardPath, "forward", seed)
+#         # await fps.send_trajectory(forwardPath, use_sync_line=True)
+#         try:
+#             await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
+#             # await send_trajectory(fps, forwardPath, use_sync_line=True)
+#         except TrajectoryError as e:
+#             print("trajectory failed!!!!")
+#             writePath(forwardPath, "forward", seed)
+#             # note offending robots
+#             t = e.trajectory.failed_positioners
+#             with open("failed_positioners_forward_%i.txt"%seed, "w") as f:
+#                 f.write(str(t))
+#             print("failed on forward")
+#             print("unwinding grid")
+#             await unwindGrid(fps)
+#             return
 
-        print("forward path done")
+#         print("forward path done")
 
-        await asyncio.sleep(1)
+#         await asyncio.sleep(1)
 
-        print("robot escape")
-        await separate(fps)
-        print("escape done...unwinding")
+#         print("robot escape")
+#         await separate(fps)
+#         print("escape done...unwinding")
 
-        await unwindGrid(fps)
+#         await unwindGrid(fps)
 
-        # await fps.send_trajectory(reversePath, use_sync_line=True)
-    else:
-        print("not sending path")
+#         # await fps.send_trajectory(reversePath, use_sync_line=True)
+#     else:
+#         print("not sending path")
 
 
 async def main():
