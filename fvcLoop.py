@@ -254,8 +254,8 @@ async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords, doProcess=T
         processImage(f[1].data, expectedTargCoords, newpath)
 
     tables = [
-        ("positionerTable", positionerTableFile),
-        ("wokCoords", wokCoordFile),
+        ("positionerTable", positionerTable),
+        ("wokCoords", wokCoords),
         ("fiducialCoords", fiducialCoords)
     ]
 
