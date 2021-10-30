@@ -25,19 +25,18 @@ import matplotlib.pyplot as plt
 # smoothPts = 5           # width of velocity smoothing window, breakout as kaiju param?
 # collisionShrink = 0.05  # amount to decrease collisionBuffer by when checking smoothed and simplified paths
 
-angStep = 0.05          # degrees per step in kaiju's rough path
+angStep = 0.2          # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
 collisionBuffer = 2.4    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.6
 UNWINDONLY = False
-TAKE_IMGS = True
 LED_VALUE = 1
 alphaHome = 0
 # betaHome = 180
 seed = None
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
-NITER = 4
+NITER = 50
 DOEXP = True
 SPEED = 2 #RPM at output
 LEFT_HAND = False

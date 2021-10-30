@@ -5,6 +5,8 @@ import sys
 
 seed = 0
 
+# baseline 1.6 sec exp for led1/2 at 1
+
 async def main(exptime, led1, led2):
     rg = getGrid(0)
 
@@ -18,8 +20,6 @@ async def main(exptime, led1, led2):
 
     for ledpower, devName in zip([led1, led2], ["led1", "led2"]):
         on_value = 32 * int(1023 * (ledpower) / 100)
-        # for dev in ["led1", "led2"]:
-        #     print(dev, "on")
         device = fps.ieb.get_device(devName)
         await device.write(on_value)
 
