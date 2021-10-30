@@ -20,7 +20,7 @@ async def main(exptime, led1, led2):
         await device.write(on_value)
 
     filename = await exposeFVC(exptime)
-    await writeProcFITS(filename, fps, rg, seed, expectedTargCoords, doProcess=False)
+    await writeProcFITS(filename, fps, rg, seed, expectedTargCoords, doProcess=True)
 
 if __name__ == "__main__":
 
