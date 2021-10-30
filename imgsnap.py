@@ -1,6 +1,6 @@
 import asyncio
 from jaeger import FPS
-from fvcLoop import exposeFVC, writeProcFITS, getGrid, getTargetCoords, updateCurrentPosition
+from fvcLoop import exposeFVC, writeProcFITS, getGrid, getTargetCoords, updateCurrentPos
 import sys
 
 seed = 0
@@ -13,7 +13,7 @@ async def main(exptime, led1, led2):
     fps = FPS()
     await fps.initialise()
 
-    updateCurrentPosition(fps, rg)
+    updateCurrentPos(fps, rg)
     expectedTargCoords = getTargetCoords(rg)
 
     for ledpower, devName in zip([led1, led2], ["led1", "led2"]):
