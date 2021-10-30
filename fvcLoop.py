@@ -80,41 +80,24 @@ class RoughTransform(object):
         yWok = xyWok[:,1]
         
 
-        meanCCDX = numpy.mean(xCCD)
-        meanCCDY = numpy.mean(yCCD)
-        stdCCDX = numpy.std(xCCD)
-        stdCCDY = numpy.std(yCCD)
+        self.meanCCDX = numpy.mean(xCCD)
+        self.meanCCDY = numpy.mean(yCCD)
+        self.stdCCDX = numpy.std(xCCD)
+        self.stdCCDY = numpy.std(yCCD)
 
-        stdWokX = numpy.std(xWok)
-        stdWokY = numpy.std(yWok)
+        self.stdWokX = numpy.std(xWok)
+        self.stdWokY = numpy.std(yWok)
 
         # scale to rough wok coords enough to make association
-        roughWokX = (xCCD - meanCCDX) / stdCCDX * stdWokX
-        roughWokY = (yCCD - meanCCDY) / stdCCDY * stdWokY
 
-        # now only use the outer FIFs to solve for trans/rot/scale
-        # they are at a radius of 324 mm
-        roughWokR = numpy.sqrt(roughWokX**2 + roughWokY**2)
-        # roughWokTheta = numpy.arctan2(roughWokY, roughWokX)
-
-        keep = roughWokR > 320
-        roughWokX = roughWokX[keep]
-        roughWokY = roughWokY[keep]
-        xCCD = xCCD[keep]
-        yCCD = yCCD[keep]
-        xyWokRough = numpy.array([roughWokX, roughWokY]).T
-        xyCCD = numpy.array([xCCD, yCCD]).T
-        amin, dist = argNearestNeighbor(xyWokRough, xyWok)
-
-        xyWok = xyWok[amin, :]
-
-        print("number of coords for rough trans", len(xyWok))
-
-        self.simTrans = SimilarityTransform()
-        self.simTrans.estimate(xyCCD, xyWok)
 
     def apply(self, xyCCD):
-        return self.simTrans(xyCCD)
+        xCCD = xyCCD[:,0]
+        yCCD = xyCCD[:,1]
+        roughWokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
+        roughWokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+        return numpy.array([roughWokX, roughWokY]).T
+        # return self.simTrans(xyCCD)
         # xCCD = xyCCD[:,0]
         # yCCD = xyCCD[:,1]
         # wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
