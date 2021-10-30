@@ -566,7 +566,7 @@ def processImage(imgData, expectedTargCoords, newpath):
     plt.savefig(newpath+"roughassoc.png", dpi=350)
     plt.close()
 
-    ft = FullTransfrom(xyFiducialCCD, xyCMM)
+    ft = FullTransfrom(xyFiducialCCD, xyCMMouter)
     print("full trans 1 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
     xyWokMeas = ft.apply(xyCCD)
 
