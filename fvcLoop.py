@@ -564,6 +564,8 @@ def processImage(imgData, expectedTargCoords, newpath):
     plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
     plt.axis("equal")
     plt.legend()
+    plt.xlim([-350, 350])
+    plt.ylim([-350,350])
     plt.savefig(newpath+"full1.png", dpi=350)
     plt.close()
 
@@ -590,7 +592,7 @@ def processImage(imgData, expectedTargCoords, newpath):
 
     # try a new transform
     ft = FullTransfrom(xyFiducialCCD, xyCMM)
-    print("full trans 1 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
+    print("full trans 2 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
     xyWokMeas = ft.apply(xyCCD) # overwrite
 
 
@@ -603,6 +605,8 @@ def processImage(imgData, expectedTargCoords, newpath):
     plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
     plt.axis("equal")
     plt.legend()
+    plt.xlim([-350, 350])
+    plt.ylim([-350,350])
     plt.savefig(newpath+"full2.png", dpi=350)
     plt.close()
 
