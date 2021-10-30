@@ -80,34 +80,54 @@ class RoughTransform(object):
         yWok = xyWok[:,1]
         
 
-        self.meanCCDX = numpy.mean(xCCD)
-        self.meanCCDY = numpy.mean(yCCD)
-        self.stdCCDX = numpy.std(xCCD)
-        self.stdCCDY = numpy.std(yCCD)
+        meanCCDX = numpy.mean(xCCD)
+        meanCCDY = numpy.mean(yCCD)
+        stdCCDX = numpy.std(xCCD)
+        stdCCDY = numpy.std(yCCD)
 
-        self.stdWokX = numpy.std(xWok)
-        self.stdWokY = numpy.std(yWok)
+        stdWokX = numpy.std(xWok)
+        stdWokY = numpy.std(yWok)
 
         # scale to rough wok coords enough to make association
-        self.roughWokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
-        self.roughWokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+        roughWokX = (xCCD - meanCCDX) / stdCCDX * stdWokX
+        roughWokY = (yCCD - meanCCDY) / stdCCDY * stdWokY
+
+        # now only use the outer FIFs to solve for trans/rot/scale
+        # they are at a radius of 324 mm
+        roughWokR = numpy.sqrt(roughWokX**2 + roughWokY**2)
+        # roughWokTheta = numpy.arctan2(roughWokY, roughWokX)
+
+        keep = roughWokR > 305
+        roughWokX = roughWokX[keep]
+        roughWokY = roughWokY[keep]
+        xCCD = xCCD[keep]
+        yCCD = yCCD[keep]
+        xyWokRough = numpy.array([roughWokX, roughWokY]).T
+        xyCCD = numpy.array([xCCD, yCCD]).T
+        amin, dist = argNearestNeighbor(xyWokRough, xyWok)
+
+        xyWok = xyWok[amin, :]
+
+        self.simTrans = SimilarityTransform()
+        self.simTrans.estimate(xyCCD, xyWok)
 
     def apply(self, xyCCD):
-        xCCD = xyCCD[:,0]
-        yCCD = xyCCD[:,1]
-        wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
-        wokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
-        return numpy.array([wokX, wokY]).T
+        return self.timTrans(xyCCD)
+        # xCCD = xyCCD[:,0]
+        # yCCD = xyCCD[:,1]
+        # wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
+        # wokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+        # return numpy.array([wokX, wokY]).T
 
 
 class FullTransfrom(object):
     # use fiducials to fit this
-    #polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int)
-    polids = numpy.array([0,1,2,3,4,5,6,9,20,27,28,29,30],dtype=int) # desi terms
+    polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int)
+    # polids = numpy.array([0,1,2,3,4,5,6,9,20,27,28,29,30],dtype=int) # desi terms
     def __init__(self, xyCCD, xyWok):
         # first fit a transrotscale model
-        #self.simTrans = SimilaityTransform()
-        self.simTrans = AffineTransform()
+        self.simTrans = SimilarityTransform()
+        # self.simTrans = AffineTransform()
         self.simTrans.estimate(xyCCD, xyWok)
 
         # apply the model to the data
@@ -491,7 +511,6 @@ def setRandomTargets(rg, alphaHome, betaHome, betaLim=None):
     return getTargetCoords(rg)
 
 
-
 def extract(imgData):
     # run source extractor,
     # do some filtering
@@ -517,6 +536,7 @@ def extract(imgData):
 
 
     print("got", len(objects), "centroids")
+    print("expected", len(positionerTable)+len(fiducialCoords), "centroids")
     # filter on most eliptic, this is an assumption!!!!
     # objects["outerFIF"] = objects.ecentricity > 0.15
 
