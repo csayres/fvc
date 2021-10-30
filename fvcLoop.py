@@ -112,7 +112,7 @@ class RoughTransform(object):
         self.simTrans.estimate(xyCCD, xyWok)
 
     def apply(self, xyCCD):
-        return self.timTrans(xyCCD)
+        return self.simTrans(xyCCD)
         # xCCD = xyCCD[:,0]
         # yCCD = xyCCD[:,1]
         # wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
