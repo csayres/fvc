@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 # smoothPts = 5           # width of velocity smoothing window, breakout as kaiju param?
 # collisionShrink = 0.05  # amount to decrease collisionBuffer by when checking smoothed and simplified paths
 
-angStep = 0.2          # degrees per step in kaiju's rough path
+angStep = 1          # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
 collisionBuffer = 2.4    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.6
@@ -665,6 +665,7 @@ async def outAndBack(fps, seed, safe=True):
         betaLim = None
 
     expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
+    print("computing paths")
     rg.pathGenGreedy()
     forwardPath, reversePath = rg.getPathPair(speed=SPEED)
 
@@ -693,10 +694,10 @@ async def outAndBack(fps, seed, safe=True):
             return
 
         print("forward path done")
-        await ledOn(fps, "led1")
-        await ledOn(fps, "led2")
-        await asyncio.sleep(1)
         if DOEXP:
+            await ledOn(fps, "led1")
+            await ledOn(fps, "led2")
+            await asyncio.sleep(1)
             print("exposing img 1")
             filename = await exposeFVC(exptime)
             await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
