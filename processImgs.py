@@ -24,9 +24,9 @@ import seaborn as sns
 # get default tables, any image will do, they're all the same
 # ff = fits.open(glob.glob("duPontSparseImg/59499/proc*.fits")[10])
 # positionerTable = ff[2].data  # was an error in mapping for 1033, instead use coordio
-positionerTable = coordio.defaults.positionerTableCalib
-wokCoords = coordio.defaults.wokCoordsCalib
-fiducialCoords = coordio.defaults.fiducialCoordsCalib
+positionerTable = coordio.defaults.positionerTable
+wokCoords = coordio.defaults.wokCoords
+fiducialCoords = coordio.defaults.fiducialCoords
 
 # wokCoords = ff[3].data
 # fiducialCoords = pandas.DataFrame(ff[4].data)
@@ -116,29 +116,29 @@ def addElipses(ax, objects):
         ax.add_artist(e)
 
 
-def extract(imgFile):
-    imgData = fitsio.read(imgFile)
-    imgData = numpy.array(imgData, dtype="float")
-    bkg = sep.Background(imgData)
-    bkg_image = bkg.back()
-    data_sub = imgData - bkg_image
-    objects = sep.extract(data_sub, 3.5, err=bkg.globalrms)
-    objects = pandas.DataFrame(objects)
+# def extract(imgFile):
+#     imgData = fitsio.read(imgFile)
+#     imgData = numpy.array(imgData, dtype="float")
+#     bkg = sep.Background(imgData)
+#     bkg_image = bkg.back()
+#     data_sub = imgData - bkg_image
+#     objects = sep.extract(data_sub, 3.5, err=bkg.globalrms)
+#     objects = pandas.DataFrame(objects)
 
-    # ecentricity
-    objects["ecentricity"] = 1 - objects["b"] / objects["a"]
+#     # ecentricity
+#     objects["ecentricity"] = 1 - objects["b"] / objects["a"]
 
-    # slope of ellipse (optical distortion direction)
-    objects["slope"] = numpy.tan(objects["theta"] + numpy.pi/2) # rotate by 90
-    # intercept of optical distortion direction
-    objects["intercept"] = objects["y"] - objects["slope"] * objects["x"]
+#     # slope of ellipse (optical distortion direction)
+#     objects["slope"] = numpy.tan(objects["theta"] + numpy.pi/2) # rotate by 90
+#     # intercept of optical distortion direction
+#     objects["intercept"] = objects["y"] - objects["slope"] * objects["x"]
 
-    objects = objects[objects["npix"] > 100]
+#     objects = objects[objects["npix"] > 100]
 
-    # filter on most eliptic, this is an assumption!!!!
-    # objects["outerFIF"] = objects.ecentricity > 0.15
+#     # filter on most eliptic, this is an assumption!!!!
+#     # objects["outerFIF"] = objects.ecentricity > 0.15
 
-    return imgData, objects
+#     return imgData, objects
 
 
 def findOpticalCenter(imgFile, plot=False):
@@ -177,12 +177,15 @@ def findOpticalCenter(imgFile, plot=False):
 
 
 class RoughTransform(object):
-    def __init__(self, objects, fiducialCoords):
+    # def __init__(self, centroids, expectedTargCoords):
+    def __init__(self, xyCCD, xyWok):
         # scale pixels to mm roughly
-        xCCD = objects.x.to_numpy()
-        yCCD = objects.y.to_numpy()
-        xWok = fiducialCoords.xWok.to_numpy()
-        yWok = fiducialCoords.yWok.to_numpy()
+        xCCD = xyCCD[:,0]
+        yCCD = xyCCD[:,1]
+        xWok = xyWok[:,0]
+        yWok = xyWok[:,1]
+
+
         self.meanCCDX = numpy.mean(xCCD)
         self.meanCCDY = numpy.mean(yCCD)
         self.stdCCDX = numpy.std(xCCD)
@@ -192,39 +195,31 @@ class RoughTransform(object):
         self.stdWokY = numpy.std(yWok)
 
         # scale to rough wok coords enough to make association
-        self.roughWokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
-        self.roughWokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
-
-    def apply(self, xCCD, yCCD):
-        wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
-        wokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
-        return wokX, wokY
 
 
-def argNearestNeighbor(xyA, xyB):
-    """loop over xy list A, find nearest neighbor in list B
-    return the indices in list b that match A
-    """
-    xyA = numpy.array(xyA)
-    xyB = numpy.array(xyB)
-    out = []
-    distance = []
-    for x, y in xyA:
-        dist = numpy.sqrt((x - xyB[:, 0])**2 + (y - xyB[:, 1])**2)
-        amin = numpy.argmin(dist)
-        distance.append(dist[amin])
-        out.append(amin)
-
-    return numpy.array(out), numpy.array(distance)
+    def apply(self, xyCCD):
+        xCCD = xyCCD[:,0]
+        yCCD = xyCCD[:,1]
+        roughWokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
+        roughWokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+        return numpy.array([roughWokX, roughWokY]).T
+        # return self.simTrans(xyCCD)
+        # xCCD = xyCCD[:,0]
+        # yCCD = xyCCD[:,1]
+        # wokX = (xCCD - self.meanCCDX) / self.stdCCDX * self.stdWokX
+        # wokY = (yCCD - self.meanCCDY) / self.stdCCDY * self.stdWokY
+        # return numpy.array([wokX, wokY]).T
 
 
-class FullTransfrom(object):
+class FullTransform(object):
     # use fiducials to fit this
-    polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int)
-
+    # polids = numpy.arange(12, dtype=int)
+    polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int) # lco
+    # polids = numpy.array([0,1,2,3,4,5,6,9,20,27,28,29,30],dtype=int) # desi terms
     def __init__(self, xyCCD, xyWok):
         # first fit a transrotscale model
-        self.simTrans = SimilarityTransform()
+        # self.simTrans = SimilarityTransform()
+        self.simTrans = AffineTransform()
         self.simTrans.estimate(xyCCD, xyWok)
 
         # apply the model to the data
@@ -273,16 +268,21 @@ class FullTransfrom(object):
         self.errs = xyWok - xyWokFit
         self.rms = numpy.sqrt(numpy.mean(self.errs**2))
 
-    def apply(self, xyCCD):
+    def apply(self, xyCCD, zb=True):
         # return wok xy
         xySimTransFit = self.simTrans(xyCCD)
-        dx, dy = getZhaoBurgeXY(
-            self.polids, self.coeffs, xySimTransFit[:,0], xySimTransFit[:,1]
-        )
-        xWokFit = xySimTransFit[:,0] + dx
-        yWokFit = xySimTransFit[:,1] + dy
-        xyWokFit = numpy.array([xWokFit, yWokFit]).T
+
+        if zb:
+            dx, dy = getZhaoBurgeXY(
+                self.polids, self.coeffs, xySimTransFit[:,0], xySimTransFit[:,1]
+            )
+            xWokFit = xySimTransFit[:,0] + dx
+            yWokFit = xySimTransFit[:,1] + dy
+            xyWokFit = numpy.array([xWokFit, yWokFit]).T
+        else:
+            xyWokFit = xySimTransFit
         return xyWokFit
+
 
 
 def getPositionerCoordinates(imgFile):
@@ -349,17 +349,19 @@ def positionerToWok(
     return xw, yw, zw, xt, yt, b
 
 
-def solveImage(imgFile, plot=False):
+def solveImage(imgFile, guessTransform, plot=False):
+    global xyCMM
     # associate fiducials and fit
     # transfrom
-    imgData, objects = extract(imgFile.strip())
+    imgData = fitsio.read(imgFile)
+    objects = extract(imgData)
     # print("found", len(objects), "in", imgFile)
     # first transform to rough wok xy
     # by default transfrom
     xyCCD = objects[["x", "y"]].to_numpy()
     # apply an initial guess at
     # trans/rot/scale
-    xyWokRough = SimTrans(xyCCD)
+    xyWokRough = guessTransform.apply(xyCCD)
 
     # first associate fiducials and build
     # a good transform
@@ -367,9 +369,9 @@ def solveImage(imgFile, plot=False):
     # print("max fiducial distance", numpy.max(distance))
     xyFiducialCCD = xyCCD[argFound]
 
-    ft = FullTransfrom(xyFiducialCCD, xyCMM)
+    ft = FullTransform(xyFiducialCCD, xyCMM)
 
-    # print("rms's in microns", ft.unbiasedRMS*1000, ft.rms*1000)
+    print("rms's in microns unbias, bias", ft.unbiasedRMS*1000, ft.rms*1000)
 
     # transform all CCD detections to wok space
     xyWokMeas = ft.apply(xyCCD)
@@ -401,6 +403,19 @@ def solveImage(imgFile, plot=False):
     argFound, distance = argNearestNeighbor(xyExpectPos, xyWokMeas)
     # print("mean/max positioner distance", numpy.mean(distance), numpy.max(distance))
     xyWokRobotMeas = xyWokMeas[argFound]
+
+    plt.figure(figsize=(8,8))
+    plt.title("full transform")
+    plt.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
+    plt.plot(xExpectPos, yExpectPos, 'xk', ms=3, label="expected met")
+    # overplot fiducials
+    plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
+    plt.axis("equal")
+    plt.legend()
+    plt.xlim([-350, 350])
+    plt.ylim([-350,350])
+    plt.savefig("%sfull.png"%imgFile, dpi=350)
+    plt.close()
 
     if plot:
         # plot the fiducial fit quiver and
@@ -665,12 +680,208 @@ def calibrateRobots(plot=False, outfileName=None):
         plt.close()
 
 
+def medianCombine():
+    imgFiles = glob.glob("apoFullImg/59518/proc*.fits")
+    # f = fits.open(imgFiles[0])
+    d = fitsio.read(imgFiles[0])
+    s = d.shape
+    print("image shape", s)
+    nPix = len(d.flatten())
+    nImg = len(imgFiles)
+    medArr = numpy.zeros((nImg,nPix))
+    for ii, imgFile in enumerate(imgFiles):
+        d = fitsio.read(imgFile)
+        medArr[ii,:] = d.flatten()
+
+    medArr = numpy.median(medArr, axis=0)
+    medArr = medArr.reshape(s)
+    plt.figure()
+    plt.imshow(equalize_hist(medArr), origin="lower")
+    plt.show()
+    print("medArr shape", medArr.shape)
+    # plt.figure()
+    # plt.imshow(equalize_hist(d), origin="lower")
+    # plt.xlim([10,20])
+    # plt.ylim([10,20])
+
+    # plt.figure()
+    # plt.imshow(equalize_hist(d.flatten().reshape(s)))
+    # plt.xlim([10,20])
+    # plt.ylim([10,20])
+    # plt.show()
+
+    hdu = fits.PrimaryHDU(medArr)
+    hdu.writeto("medianImg.fits", overwrite=True)
+    # fitsio.write("medianImg.fits", medArr)
+
+def extract(imgData):
+    # run source extractor,
+    # do some filtering
+    # return the extracted centroids
+    imgData = numpy.array(imgData, dtype="float")
+    bkg = sep.Background(imgData)
+    bkg_image = bkg.back()
+    data_sub = imgData - bkg_image
+    objects = sep.extract(data_sub, 3.5, err=bkg.globalrms)
+    objects = pandas.DataFrame(objects)
+
+    # ecentricity
+    objects["ecentricity"] = 1 - objects["b"] / objects["a"]
+
+    # slope of ellipse (optical distortion direction)
+    objects["slope"] = numpy.tan(objects["theta"] + numpy.pi/2) # rotate by 90
+    # intercept of optical distortion direction
+    objects["intercept"] = objects["y"] - objects["slope"] * objects["x"]
+
+    # ignore everything less than 100 pixels
+    # something changed when rick bumped things?
+    objects = objects[objects["npix"] > 100]
+
+
+    print("got", len(objects), "centroids")
+    print("expected", len(positionerTable)+len(fiducialCoords), "centroids")
+    # filter on most eliptic, this is an assumption!!!!
+    # objects["outerFIF"] = objects.ecentricity > 0.15
+
+    return objects
+
+def argNearestNeighbor(xyA, xyB):
+    """loop over xy list A, find nearest neighbor in list B
+    return the indices in list b that match A
+    """
+    xyA = numpy.array(xyA)
+    xyB = numpy.array(xyB)
+    out = []
+    distance = []
+    for x, y in xyA:
+        dist = numpy.sqrt((x - xyB[:, 0])**2 + (y - xyB[:, 1])**2)
+        amin = numpy.argmin(dist)
+        distance.append(dist[amin])
+        out.append(amin)
+
+    return numpy.array(out), numpy.array(distance)
+
+def initialFiducialTransform():
+    global xyCMM
+    imgData = fitsio.read("medianImg.fits")
+    # plt.figure()
+    # plt.imshow(equalize_hist(imgData), origin="lower")
+    # plt.show()
+    centroids = extract(imgData)
+    print("n centroids", len(centroids))
+    print("n cmm", len(xCMM))
+    xyCCD = centroids[["x", "y"]].to_numpy()
+
+    rt = RoughTransform(xyCCD, xyCMM)
+    xyWokRough = rt.apply(xyCCD)
+
+    ## remove fiducials at large radius
+    # keep = numpy.linalg.norm(xyCMM, axis=1) < 310
+    # xyCMM = xyCMM[keep,:]
+
+    argFound, dist = argNearestNeighbor(xyCMM, xyWokRough)
+    xyFiducialCCD = xyCCD[argFound]
+    xyFiducialWokRough = xyWokRough[argFound]
+
+    # for debugging?
+    dd = {}
+    dd["xCCD"] = xyFiducialCCD[:,0]
+    dd["yCCD"] = xyFiducialCCD[:,1]
+    dd["roughWokX"] = xyFiducialWokRough[:,0]
+    dd["roughWokY"] = xyFiducialWokRough[:,1]
+    df = pandas.DataFrame(dd)
+    df.to_csv("forjose.csv")
+
+
+    plt.figure(figsize=(8,8))
+    plt.title("rough fiducial association")
+    plt.plot(xyWokRough[:,0], xyWokRough[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
+    # plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
+    # overplot fiducials
+    plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
+    for cmm, rough in zip(xyCMM, xyFiducialWokRough):
+        plt.plot([cmm[0], rough[0]], [cmm[1], rough[1]], "-k")
+    plt.axis("equal")
+    plt.legend()
+    plt.savefig("roughassoc.png", dpi=350)
+    plt.close()
+
+    firstGuessTF = FullTransform(xyFiducialCCD, xyCMM)
+    print("full trans 1 bias, unbias", firstGuessTF.rms*1000, firstGuessTF.unbiasedRMS*1000)
+    xyWokMeas = firstGuessTF.apply(xyFiducialCCD, zb=True)
+
+    # print("xyCMM")
+    # for x, y in xyCMM:
+    #     print("%.3f  %.3f"%(x,y))
+    # print(xyCMM)
+
+    plt.figure(figsize=(8,8))
+    plt.title("full transform 1")
+    plt.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
+    #plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
+    # overplot fiducials
+    plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
+    plt.axis("equal")
+    plt.legend()
+    plt.xlim([-350, 350])
+    plt.ylim([-350,350])
+    plt.savefig("full.png", dpi=350)
+    plt.close()
+
+    dxy = xyCMM - xyWokMeas
+
+    plt.figure()
+    plt.hist(numpy.linalg.norm(dxy,axis=1)*1000)
+    plt.savefig("fiducialhist.png", dpi=350)
+
+    plt.figure()
+    plt.quiver(xyCMM[:,0], xyCMM[:,1], dxy[:,0], dxy[:,1], angles="xy")
+    plt.axis("equal")
+    plt.savefig("fiducialquiver.png", dpi=350)
+
+    # gridPts = []
+    # for gridX in numpy.linspace(numpy.min(xyCCD[:,0]), numpy.max(xyCCD[:,0]), 500):
+    #     for gridY in numpy.linspace(numpy.min(xyCCD[:,1]), numpy.max(xyCCD[:,1]), 500):
+    #         gridPts.append([gridX, gridY])
+
+    # plt.figure()
+    # gridPts = numpy.array(gridPts)
+    # warpPts = ft.apply(gridPts, zb=True)
+    # plt.plot(warpPts[:,0], warpPts[:,1], '.k', ms=10, alpha=0.2)
+
+    # plt.show()
+
+    # ignor errors > 100 micron and refit
+
+    keep = numpy.linalg.norm(dxy, axis=1)*1000 < 50
+    ft = FullTransform(xyFiducialCCD[keep,:], xyCMM[keep,:])
+    print("full trans 2 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
+    xyCMM = xyCMM[keep,:]
+    # xyWokMeas = ft.apply(xyFiducialCCD, zb=False)
+
+    # dxy = xyCMM - xyWokMeas
+
+    # plt.figure()
+    # plt.hist(numpy.linalg.norm(dxy,axis=1)*1000)
+
+    # plt.figure()
+    # plt.quiver(xyCMM[:,0], xyCMM[:,1], dxy[:,0], dxy[:,1], angles="xy")
+    # plt.axis("equal")
+    # plt.show()
+
+    for img in glob.glob("apoFullImg/59518/proc*.fits"):
+        print("on img", img)
+        solveImage(img, firstGuessTF, plot=False)
+    # return firstGuessTF
 
 
 if __name__ == "__main__":
+    # medianCombine()
+    initialFiducialTransform()
+    # medianCombine()
     #organize(utahBasePath)
     # compileMetrology(multiprocess=True, plot=False) # plot isn't working?
-    calibrateRobots(plot=True)
+    # calibrateRobots(plot=True)
 
 """
 process:

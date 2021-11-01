@@ -105,7 +105,7 @@ class RoughTransform(object):
         # return numpy.array([wokX, wokY]).T
 
 
-class FullTransfrom(object):
+class FullTransform(object):
     # use fiducials to fit this
     polids = numpy.array([0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],dtype=int)
     # polids = numpy.array([0,1,2,3,4,5,6,9,20,27,28,29,30],dtype=int) # desi terms
@@ -570,7 +570,7 @@ def processImage(imgData, expectedTargCoords, newpath):
     plt.savefig(newpath+"roughassoc.png", dpi=350)
     plt.close()
 
-    ft = FullTransfrom(xyFiducialCCD, xyCMMouter)
+    ft = FullTransform(xyFiducialCCD, xyCMMouter)
     print("full trans 1 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
     xyWokMeas = ft.apply(xyCCD, zb=False)
 
@@ -609,7 +609,7 @@ def processImage(imgData, expectedTargCoords, newpath):
     plt.close()
 
     # try a new transform
-    ft = FullTransfrom(xyFiducialCCD, xyCMM)
+    ft = FullTransform(xyFiducialCCD, xyCMM)
     print("full trans 2 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
     xyWokMeas = ft.apply(xyCCD) # overwrite
 
