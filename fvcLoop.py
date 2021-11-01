@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 # smoothPts = 5           # width of velocity smoothing window, breakout as kaiju param?
 # collisionShrink = 0.05  # amount to decrease collisionBuffer by when checking smoothed and simplified paths
 
-angStep = 1          # degrees per step in kaiju's rough path
+angStep = 0.05          # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
 collisionBuffer = 2.4    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.6
@@ -33,10 +33,10 @@ UNWINDONLY = False
 LED_VALUE = 1
 alphaHome = 0
 # betaHome = 180
-seed = None
+SEED = 600
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
-NITER = 50
+NITER = 30
 DOEXP = True
 SPEED = 2 #RPM at output
 LEFT_HAND = False
@@ -780,11 +780,11 @@ async def outAndBack(fps, seed, safe=True):
 
 
 async def main():
-    seed = 9
-    if seed is None:
-        seed = numpy.random.randint(0, 30000)
+    global SEED
+    if SEED is None:
+        SEED = numpy.random.randint(0, 30000)
 
-    print("seed", seed)
+    print("seed", SEED)
     fps = FPS()
     await fps.initialise()
     # await getTemps(fps)
@@ -810,9 +810,9 @@ async def main():
     ii = 0
     while ii < NITER:
         ii += 1
-        seed += 1
+        SEED += 1
         print("\n\niter %i\n\n"%ii)
-        await outAndBack(fps, seed, safe=DO_SAFE)
+        await outAndBack(fps, SEED, safe=DO_SAFE)
 
 
     await fps.shutdown()
