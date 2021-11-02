@@ -1,11 +1,13 @@
 import asyncio
 import os
 import numpy
+numpy.random.seed(0)
 import datetime
 from astropy.io import fits
 import pandas as pd
 import pickle
 import datetime
+import time
 
 from jaeger import FPS, log
 from jaeger.commands.trajectory import send_trajectory
@@ -25,22 +27,23 @@ import matplotlib.pyplot as plt
 # smoothPts = 5           # width of velocity smoothing window, breakout as kaiju param?
 # collisionShrink = 0.05  # amount to decrease collisionBuffer by when checking smoothed and simplified paths
 
-angStep = 0.05          # degrees per step in kaiju's rough path
+angStep = 0.1         # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
 collisionBuffer = 2.4    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.6
+EXPLODEFIRST = False
 UNWINDONLY = False
 LED_VALUE = 1
-alphaHome = 0
-# betaHome = 180
-SEED = 623
+SEED = 0
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
-NITER = 30
-DOEXP = True
+NITER = 1
+DOEXP = False
 SPEED = 2 #RPM at output
 LEFT_HAND = False
 DO_SAFE = True
+
+badRobots = [235, 1395]
 
 if LEFT_HAND:
     alphaHome = 360
@@ -180,9 +183,14 @@ class FullTransform(object):
 def getGrid(seed):
     rg = RobotGridCalib(angStep, collisionBuffer, epsilon, seed)
 
-    # rg.robotDict[1097].setAlphaBeta(0, 180.0001)
-    # rg.robotDict[1097].setDestinationAlphaBeta(0, 180.0001)
-    # rg.robotDict[1097].isOffline = True
+    rg.robotDict[235].setAlphaBeta(0.0076,180.0012)
+    rg.robotDict[235].setDestinationAlphaBeta(0.0076,180.0012)
+    rg.robotDict[235].isOffline = True
+
+    rg.robotDict[1395].setAlphaBeta(0.0208,180.0197)
+    rg.robotDict[1395].setDestinationAlphaBeta(0.0208,180.0197)
+    rg.robotDict[1395].isOffline = True
+
     if LEFT_HAND:
         for robot in rg.robotDict.values():
             robot.lefthanded = True
@@ -432,7 +440,10 @@ async def unwindGrid(fps):
     print("smooth collisions", rg.smoothCollisions)
     # print(forwardPath)
     # print(reversePath)
-    await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+    if rg.didFail:
+        print("deadlock in unwind, not applying")
+    else:
+        await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
 
 
 def writePath(pathdict, direction, seed):
@@ -652,21 +663,69 @@ def processImage(imgData, expectedTargCoords, newpath):
     return expectedTargCoords
 
 
+def getUnsafePath(seed):
+    rg = getGrid(seed)
+    setRandomTargets(rg, alphaHome, betaHome)
+    # tc = getTargetCoords(rg)
+    attempt = 0
+    replacedRobotList = []
+    for jj in range(5):
+        print("attempt %i"%attempt)
+        tstart = time.time()
+        expectedTargCoords = getTargetCoords(rg)
+        rg.pathGenGreedy()
+        print("path gen took %.2f secs"%(time.time()-tstart))
+        print("%s deadlocked robots"%len(rg.deadlockedRobots()))
+        # plotOne(0, rg, "beg_apo%i_%i.png"%(seed, attempt), isSequence=False)
+        # plotOne(rg.nSteps, rg, "end_apo%i_%i.png"%(seed, attempt), isSequence=False)
+        if not rg.didFail:
+            break
+        if len(rg.deadlockedRobots()) > 6:
+            print("too many deadlocks to resolve")
+            break
+        while True:
+            nextReplacement = numpy.random.choice(rg.deadlockedRobots())
+            if nextReplacement not in badRobots:
+                break
+        replacedRobotList.append(nextReplacement)
+        rg = getGrid(seed)
+        setRandomTargets(rg, alphaHome, betaHome)
+        for robotID in replacedRobotList:
+            robot = rg.robotDict[robotID]
+            robot.setXYUniform()
+        rg.decollideGrid()
+
+        attempt += 1
+
+    if rg.didFail:
+        print("failed")
+    else:
+        print("solved!")
+        # plotPaths(rg, downsample=1000, filename="apo%i.mp4"%seed)
+    return rg, expectedTargCoords
+
+def getSafePath(seed):
+    rg = getGrid(seed)
+    betaLim = [165, 195]
+    numpy.random.seed(seed)
+
+    expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
+    rg.pathGenGreedy()
+    return rg, expectedTargCoords
+
+
+
 async def outAndBack(fps, seed, safe=True):
     """Move robots out and back on non-colliding trajectories
     """
-    rg = getGrid(seed)
+    # rg = getGrid(seed)
 
     print("out and back safe=%s seed=%i"%(str(safe), seed))
     if safe:
-        betaLim = [165, 195]
-        numpy.random.seed(seed)
+        rg, expectedTargCoords = getSafePath(seed)
     else:
-        betaLim = None
+        rg, expectedTargCoords = getUnsafePath(seed)
 
-    expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
-    print("computing paths")
-    rg.pathGenGreedy()
     forwardPath, reversePath = rg.getPathPair(speed=SPEED)
 
     print("didFail", rg.didFail)
@@ -676,11 +735,9 @@ async def outAndBack(fps, seed, safe=True):
     await ledOff(fps, "led2")
     if not rg.didFail and rg.smoothCollisions == 0:
         print("sending forward path")
-        # writePath(forwardPath, "forward", seed)
-        # await fps.send_trajectory(forwardPath, use_sync_line=True)
         try:
-            await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
-            # await send_trajectory(fps, forwardPath, use_sync_line=True)
+            print("dry run forward!!!!")
+            # await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
             print("trajectory failed!!!!")
             writePath(forwardPath, "forward", seed)
@@ -701,18 +758,14 @@ async def outAndBack(fps, seed, safe=True):
             print("exposing img 1")
             filename = await exposeFVC(exptime)
             await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
-        #await ledOn(fps, "led2")
-        #await asyncio.sleep(1)
-        #print("exposing img2")
-        #filename = await exposeFVC(exptime)
-        #await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
+
         await ledOff(fps, "led1")
         await ledOff(fps, "led2")
 
         print("sending reverse path")
-        #writePath(reversePath, "reverse", seed)
         try:
-            await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+            print("dry run backward!!!")
+            # await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
             # await send_trajectory(fps, reversePath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
             print("trajectory failed!!!!")
@@ -795,6 +848,11 @@ async def main():
     # filename = await exposeFVC(exptime)
     # await asyncio.sleep(2)
     # await writeProcFITS(filename, fps)
+    if EXPLODEFIRST:
+        print("exploding grid")
+        await separate(fps)
+        print("done exploding")
+
     print("unwind")
     await unwindGrid(fps)
     print("unwound")

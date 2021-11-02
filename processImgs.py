@@ -349,8 +349,9 @@ def positionerToWok(
     return xw, yw, zw, xt, yt, b
 
 
-def solveImage(imgFile, guessTransform, plot=False):
+def solveImage(imgFile, guessTransform, zb=True, plot=False):
     global xyCMM
+    print("using %i points for fiducial transform"%len(xyCMM))
     # associate fiducials and fit
     # transfrom
     imgData = fitsio.read(imgFile)
@@ -374,8 +375,8 @@ def solveImage(imgFile, guessTransform, plot=False):
     print("rms's in microns unbias, bias", ft.unbiasedRMS*1000, ft.rms*1000)
 
     # transform all CCD detections to wok space
-    xyWokMeas = ft.apply(xyCCD)
-    xyFiducialMeas = ft.apply(xyFiducialCCD)
+    xyWokMeas = ft.apply(xyCCD, zb=zb)
+    xyFiducialMeas = ft.apply(xyFiducialCCD, zb=zb)
 
     pc = getPositionerCoordinates(imgFile)
 
@@ -522,7 +523,8 @@ def minimizeMe(x, robotID, alpha, beta, xWok, yWok):
 
 def fitOneRobot(rID):
     # turn this into an object w/ attrs
-    df = pandas.read_csv("duPontSparseMeas.csv")
+    # !!!!!!!!! warning hack!!!!
+    df = pandas.read_csv("apoFullMeasSafe.csv")
     dfR = df[df.robotID==rID]
     xExpect = dfR.xWokExpect.to_numpy()
     yExpect = dfR.yWokExpect.to_numpy()
@@ -559,9 +561,9 @@ def fitOneRobot(rID):
 #         calibs.append(fitOneRobot(rID))
 
 
-def calibrateRobots(plot=False, outfileName=None):
+def calibrateRobots(inFile="duPontSparseMeas.csv", outfileName="positionerTableCalib.csv"):
     # multiprocess version
-    df = pandas.read_csv("duPontSparseMeas.csv")
+    df = pandas.read_csv(inFile)
     robotIDs = set(df.robotID)
     p = Pool(cpu_count()-1)
     out = p.map(fitOneRobot, robotIDs)
@@ -622,7 +624,7 @@ def calibrateRobots(plot=False, outfileName=None):
 
     # drop unnamed columns
     npt = npt.loc[:, ~npt.columns.str.contains('^Unnamed')]
-    npt.to_csv("positionerTableCalib.csv", index=False)
+    npt.to_csv(outfileName)
 
     xm = numpy.array(xm).flatten()
     ym = numpy.array(ym).flatten()
@@ -638,46 +640,52 @@ def calibrateRobots(plot=False, outfileName=None):
         "yMeas": ym,
         "dx": _dx,
         "dy": _dy,
+        "dxNC": _dxNC,
+        "dyNC": _dyNC,
         "umErr": _umErr,
         "robotID": _robots
     })
 
-    if plot:
+    df.to_csv("calibResults.csv")
 
-        # plot non calibrated quiver
+def plotCalibResults(removeOutliers=False):
+    df = pandas.read_csv("calibResults.csv")
 
-        # detect outliers > 1mm?
-        keep = _umErr < 1000
+    # plot non calibrated quiver
 
-        plt.figure(figsize=(10,10))
-        plt.title("before robot calibration applied")
-        Q = plt.quiver(xm[keep], ym[keep], _dxNC[keep], _dyNC[keep], angles="xy")
-        plt.quiverkey(Q, X=0.3, Y=1.1, U=2,
-                     label='Quiver key, length = 2 mm', labelpos='E')
-        plt.savefig("quiverFitNC.png", dpi=250)
-        plt.xlabel("wok x (mm)")
-        plt.ylabel("wok y (mm)")
-        plt.close()
+    # detect outliers > 1mm?
+    if removeOutliers:
+        df = df[df.umErr < 200]
 
-        plt.figure(figsize=(10,10))
-        plt.title("after robot calibration applied")
-        Q = plt.quiver(xm[keep], ym[keep], _dx[keep], _dy[keep], angles="xy")
+    plt.figure(figsize=(9, 9))
+    plt.title("before robot calibration applied")
+    Q = plt.quiver(df.xMeas, df.yMeas, df.dxNC, df.dyNC, scale=20, angles="xy")
+    plt.quiverkey(Q, X=0.3, Y=1.1, U=2,
+                 label='Quiver key, length = 2 mm', labelpos='E')
+    plt.savefig("quiverFitNC.png", dpi=250)
+    plt.xlabel("wok x (mm)")
+    plt.ylabel("wok y (mm)")
 
-        plt.quiverkey(Q, X=0.3, Y=1.1, U=0.050,
-                     label='Quiver key, length = 50 microns', labelpos='E')
-        plt.xlabel("wok x (mm)")
-        plt.ylabel("wok y (mm)")
-        plt.savefig("quiverFit.png", dpi=250)
-        plt.close()
 
-        plt.figure(figsize=(10, 5))
-        plt.title("Calibrated Blind Move Error")
-        sns.boxplot(x="robotID", y="umErr", data=df)
-        plt.xticks(rotation=45)
-        plt.savefig("fitStatsFull.png", dpi=250)
-        plt.ylim([0, 150])
-        plt.savefig("fitStatsZoom.png", dpi=250)
-        plt.close()
+    plt.figure(figsize=(9, 9))
+    plt.title("after robot calibration applied")
+    Q = plt.quiver(df.xMeas, df.yMeas, df.dx, df.dy, scale=4, angles="xy")
+
+    plt.quiverkey(Q, X=0.3, Y=1.1, U=0.050,
+                 label='Quiver key, length = 50 microns', labelpos='E')
+    plt.xlabel("wok x (mm)")
+    plt.ylabel("wok y (mm)")
+    plt.savefig("quiverFit.png", dpi=250)
+
+
+    plt.figure(figsize=(10, 5))
+    plt.title("Calibrated Blind Move Error")
+    sns.boxplot(x="robotID", y="umErr", data=df)
+    plt.xticks(rotation=45)
+    plt.savefig("fitStatsFull.png", dpi=250)
+    # plt.ylim([0, 150])
+    # plt.savefig("fitStatsZoom.png", dpi=250)
+
 
 
 def medianCombine():
@@ -689,7 +697,7 @@ def medianCombine():
     nPix = len(d.flatten())
     nImg = len(imgFiles)
     medArr = numpy.zeros((nImg,nPix))
-    for ii, imgFile in enumerate(imgFiles):
+    for ii, imgFile in enumerate(imgFiles[:30]):
         d = fitsio.read(imgFile)
         medArr[ii,:] = d.flatten()
 
@@ -775,7 +783,7 @@ def initialFiducialTransform():
     rt = RoughTransform(xyCCD, xyCMM)
     xyWokRough = rt.apply(xyCCD)
 
-    ## remove fiducials at large radius
+    # # remove fiducials at large radius
     # keep = numpy.linalg.norm(xyCMM, axis=1) < 310
     # xyCMM = xyCMM[keep,:]
 
@@ -853,11 +861,26 @@ def initialFiducialTransform():
 
     # ignor errors > 100 micron and refit
 
-    keep = numpy.linalg.norm(dxy, axis=1)*1000 < 50
-    ft = FullTransform(xyFiducialCCD[keep,:], xyCMM[keep,:])
-    print("full trans 2 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
-    xyCMM = xyCMM[keep,:]
-    # xyWokMeas = ft.apply(xyFiducialCCD, zb=False)
+    keepThresh = None
+    if keepThresh is not None:
+        keep = numpy.linalg.norm(dxy, axis=1)*1000 < keepThresh
+        ft = FullTransform(xyFiducialCCD[keep,:], xyCMM[keep,:])
+        print("full trans 2 bias, unbias", ft.rms*1000, ft.unbiasedRMS*1000)
+        xyCMM = xyCMM[keep,:]
+        xyWokMeas = ft.apply(xyFiducialCCD[keep,:], zb=True)
+
+    # fiducial fit
+    d = {}
+    d["xCMM"] = xyCMM[:,0]
+    d["yCMM"] = xyCMM[:,1]
+    d["xMeas"] = xyWokMeas[:,0]
+    d["yMeas"] = xyWokMeas[:,1]
+    d["dx"] = xyCMM[:,0] - xyWokMeas[:,0]
+    d["dy"] = xyCMM[:,1] - xyWokMeas[:,1]
+    d["keepThresh"] = [keepThresh]*len(xyCMM[:,0])
+    df = pandas.DataFrame(d)
+    df.to_csv("fiducialFit.csv")
+
 
     # dxy = xyCMM - xyWokMeas
 
@@ -869,19 +892,29 @@ def initialFiducialTransform():
     # plt.axis("equal")
     # plt.show()
 
+
+    dfList = []
+
     for img in glob.glob("apoFullImg/59518/proc*.fits"):
         print("on img", img)
-        solveImage(img, firstGuessTF, plot=False)
+        dfList.append(solveImage(img, firstGuessTF, zb=True, plot=False))
+
+    dfList = pandas.concat(dfList)
+
+    dfList.to_csv("apoFullMeasSafe.csv", index=False)
     # return firstGuessTF
 
 
 if __name__ == "__main__":
     # medianCombine()
-    initialFiducialTransform()
+    # initialFiducialTransform()
     # medianCombine()
     #organize(utahBasePath)
     # compileMetrology(multiprocess=True, plot=False) # plot isn't working?
-    # calibrateRobots(plot=True)
+    initialFiducialTransform()
+    calibrateRobots(inFile="apoFullMeasSafe.csv", outfileName="positionerTableAPOSafe.csv")
+    plotCalibResults(removeOutliers=False)
+    plt.show()
 
 """
 process:
