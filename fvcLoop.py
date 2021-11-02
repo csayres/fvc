@@ -29,19 +29,19 @@ import matplotlib.pyplot as plt
 
 angStep = 0.1         # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
-collisionBuffer = 2.4    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
+collisionBuffer = 2.3    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.6
-EXPLODEFIRST = False
-UNWINDONLY = False
+EXPLODEFIRST = True
+UNWINDONLY = True
 LED_VALUE = 1
-SEED = 0
+SEED = 120
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
-NITER = 1
-DOEXP = False
+NITER = 500
+DOEXP = True
 SPEED = 2 #RPM at output
 LEFT_HAND = False
-DO_SAFE = True
+DO_SAFE = False
 
 badRobots = [235, 1395]
 
@@ -726,7 +726,6 @@ async def outAndBack(fps, seed, safe=True):
     else:
         rg, expectedTargCoords = getUnsafePath(seed)
 
-    forwardPath, reversePath = rg.getPathPair(speed=SPEED)
 
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
@@ -734,6 +733,7 @@ async def outAndBack(fps, seed, safe=True):
     await ledOff(fps, "led1")
     await ledOff(fps, "led2")
     if not rg.didFail and rg.smoothCollisions == 0:
+        forwardPath, reversePath = rg.getPathPair(speed=SPEED)
         print("sending forward path")
         try:
             await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
@@ -757,6 +757,9 @@ async def outAndBack(fps, seed, safe=True):
             print("exposing img 1")
             filename = await exposeFVC(exptime)
             await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
+        else:
+            print("sleeping for 60 seconds")
+            await asyncio.sleep(2)
 
         await ledOff(fps, "led1")
         await ledOff(fps, "led2")
