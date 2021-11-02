@@ -191,6 +191,10 @@ def getGrid(seed):
     rg.robotDict[1395].setDestinationAlphaBeta(0.0208,180.0197)
     rg.robotDict[1395].isOffline = True
 
+    rg.robotDict[278].setAlphaBeta(0.0163, 180.0588)
+    rg.robotDict[278].setDestinationAlphaBeta(0.0163, 180.0588)
+    rg.robotDict[278].isOffline = True
+
     if LEFT_HAND:
         for robot in rg.robotDict.values():
             robot.lefthanded = True
