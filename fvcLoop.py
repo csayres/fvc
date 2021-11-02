@@ -736,8 +736,7 @@ async def outAndBack(fps, seed, safe=True):
     if not rg.didFail and rg.smoothCollisions == 0:
         print("sending forward path")
         try:
-            print("dry run forward!!!!")
-            # await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
+            await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
             print("trajectory failed!!!!")
             writePath(forwardPath, "forward", seed)
@@ -765,8 +764,7 @@ async def outAndBack(fps, seed, safe=True):
         print("sending reverse path")
         try:
             print("dry run backward!!!")
-            # await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
-            # await send_trajectory(fps, reversePath, use_sync_line=use_sync_line)
+            await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
             print("trajectory failed!!!!")
             writePath(reversePath, "reverse", seed)
