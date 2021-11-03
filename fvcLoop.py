@@ -42,6 +42,7 @@ DOEXP = False
 SPEED = 2 #RPM at output
 LEFT_HAND = False
 DO_SAFE = False
+DO_MDP = True
 
 badRobots = [235, 1395, 278]
 
@@ -438,7 +439,10 @@ async def unwindGrid(fps):
     print("unwind grid")
     await updateCurrentPos(fps, rg)
     # path generated from current position
-    rg.pathGenGreedy()
+    if DO_MDP:
+        rg.pathGenMDP(0.9, 0.1)
+    else:
+        rg.pathGenGreedy()
     forwardPath, reversePath = rg.getPathPair(speed=SPEED)
     print("didFail", rg.didFail)
     print("smooth collisions", rg.smoothCollisions)
@@ -677,7 +681,10 @@ def getUnsafePath(seed):
         print("attempt %i"%attempt)
         tstart = time.time()
         expectedTargCoords = getTargetCoords(rg)
-        rg.pathGenGreedy()
+        if DO_MDP:
+            rg.pathGenMDP(0.9, 0.1)
+        else:
+            rg.pathGenGreedy()
         print("path gen took %.2f secs"%(time.time()-tstart))
         print("%s deadlocked robots"%len(rg.deadlockedRobots()))
         # plotOne(0, rg, "beg_apo%i_%i.png"%(seed, attempt), isSequence=False)
