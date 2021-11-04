@@ -662,28 +662,31 @@ def plotCalibResults(removeOutliers=False):
     Q = plt.quiver(df.xMeas, df.yMeas, df.dxNC, df.dyNC, scale=20, angles="xy")
     plt.quiverkey(Q, X=0.3, Y=1.1, U=2,
                  label='Quiver key, length = 2 mm', labelpos='E')
-    plt.savefig("quiverFitNC.png", dpi=250)
+    plt.savefig("quiverFitNC.png", dpi=350)
     plt.xlabel("wok x (mm)")
     plt.ylabel("wok y (mm)")
 
 
     plt.figure(figsize=(9, 9))
     plt.title("after robot calibration applied")
-    Q = plt.quiver(df.xMeas, df.yMeas, df.dx, df.dy, scale=4, angles="xy")
+    Q = plt.quiver(df.xMeas, df.yMeas, df.dx, df.dy, scale=2, angles="xy")
 
     plt.quiverkey(Q, X=0.3, Y=1.1, U=0.050,
                  label='Quiver key, length = 50 microns', labelpos='E')
     plt.xlabel("wok x (mm)")
     plt.ylabel("wok y (mm)")
-    plt.savefig("quiverFit.png", dpi=250)
+    plt.savefig("quiverFit.png", dpi=350)
 
 
-    plt.figure(figsize=(10, 5))
-    plt.title("Calibrated Blind Move Error")
-    sns.boxplot(x="robotID", y="umErr", data=df)
-    plt.xticks(rotation=45)
-    plt.savefig("fitStatsFull.png", dpi=250)
-    # plt.ylim([0, 150])
+
+    for ii, _df in enumerate(numpy.split(df,20)):
+        plt.figure(figsize=(10, 5))
+        plt.title("Calibrated Blind Move Error")
+        sns.boxplot(x="robotID", y="umErr", data=_df)
+        plt.xticks(rotation=45)
+        plt.ylim([0,300])
+        plt.savefig("group%i.png"%ii, dpi=350)
+        plt.close()
     # plt.savefig("fitStatsZoom.png", dpi=250)
 
 
@@ -911,8 +914,8 @@ if __name__ == "__main__":
     # medianCombine()
     #organize(utahBasePath)
     # compileMetrology(multiprocess=True, plot=False) # plot isn't working?
-    initialFiducialTransform()
-    calibrateRobots(inFile="apoFullMeasSafe.csv", outfileName="positionerTableAPOSafe.csv")
+    # initialFiducialTransform()
+    # calibrateRobots(inFile="apoFullMeasSafe.csv", outfileName="positionerTableAPOSafe.csv")
     plotCalibResults(removeOutliers=False)
     plt.show()
 

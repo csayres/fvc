@@ -29,11 +29,14 @@ import matplotlib.pyplot as plt
 
 angStep = 0.1         # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
-collisionBuffer = 2    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
+collisionBuffer = 2.4    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.6
 EXPLODEFIRST = True
 UNWINDONLY = True
-LED_VALUE = 1
+FORCEUNWIND = False
+MET_LED_VALUE = 1
+AP_LED_VALUE = 50
+BOSS_LED_VALUE = 50
 SEED = 120
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
@@ -343,11 +346,13 @@ async def getIEBData(fps):
 
     addHeaders["LED1"] = (await fps.ieb.read_device("led1"))[0]
     addHeaders["LED2"] = (await fps.ieb.read_device("led2"))[0]
+    addHeaders["LED3"] = (await fps.ieb.read_device("led3"))[0]
+    addHeaders["LED4"] = (await fps.ieb.read_device("led4"))[0]
 
     return addHeaders
 
 
-async def ledOn(fps, devName, ledpower=LED_VALUE):
+async def ledOn(fps, devName, ledpower):
     # global led_state
     # led_state = ledpower
 
@@ -448,10 +453,15 @@ async def unwindGrid(fps):
     print("smooth collisions", rg.smoothCollisions)
     # print(forwardPath)
     # print(reversePath)
-    #if rg.didFail:
-        #print("deadlock in unwind, not applying")
-    #else:
-    await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+    if rg.didFail:
+        print("deadlock in unwind")
+        if FORCEUNWIND:
+            print("doing it anyway")
+            await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+    else:
+        await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+
+    return rg.didFail
 
 
 def writePath(pathdict, direction, seed):
@@ -750,14 +760,10 @@ async def outAndBack(fps, seed, safe=True):
             await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
             print("trajectory failed!!!!")
-            writePath(forwardPath, "forward", seed)
-            # note offending robots
+
             t = e.trajectory.failed_positioners
-            with open("failed_positioners_forward_%i.txt"%seed, "w") as f:
-                f.write(str(t))
-            print("failed on forward")
-            print("unwinding grid")
-            await unwindGrid(fps)
+
+            print("%s failed on forward"%str(t))
             return
 
         print("forward path done")
@@ -768,6 +774,30 @@ async def outAndBack(fps, seed, safe=True):
             print("exposing img 1")
             filename = await exposeFVC(exptime)
             await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
+
+            await ledOff(fps, "led1")
+            await ledOff(fps, "led2")
+            await ledOn(fps, "led3")
+            await asyncio.sleep(1)
+            print("exposing img 2")
+            filename = await exposeFVC(exptime)
+            await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
+
+            await ledOff(fps, "led3")
+            await ledOn(fps, "led4")
+            await asyncio.sleep(1)
+            print("exposing img 3")
+            filename = await exposeFVC(exptime)
+            await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
+
+            await ledOff(fps, "led4")
+            await ledOn(fps, "led1")
+            await ledOn(fps, "led2")
+            await asyncio.sleep(1)
+            print("exposing img 4")
+            filename = await exposeFVC(exptime)
+            await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
+
         else:
             print("sleeping for 60 seconds")
             await asyncio.sleep(2)
@@ -781,67 +811,13 @@ async def outAndBack(fps, seed, safe=True):
             await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
             print("trajectory failed!!!!")
-            writePath(reversePath, "reverse", seed)
-            # note offending robots
             t = e.trajectory.failed_positioners
-            with open("failed_positioners_reverse_%i.txt"%seed, "w") as f:
-                f.write(str(t))
-            print("unwinding grid")
-            await unwindGrid(fps)
+            print("%s failied on reverse path"%(str(t)))
             return
 
-        # await fps.send_trajectory(reversePath, use_sync_line=True)
     else:
         print("not sending path")
 
-
-# async def outAndEscape(fps, seed):
-#     """Move robots out and back on non-colliding trajectories
-#     """
-#     rg = getGrid(seed)
-#     print("out and escape seed=%i"%(seed))
-
-#     betaLim = None
-
-#     expectedTargCoords = setRandomTargets(rg, alphaHome, betaHome, betaLim)
-#     rg.pathGenGreedy()
-#     forwardPath, reversePath = rg.getPathPair(speed=SPEED)
-
-#     print("didFail", rg.didFail)
-#     print("smooth collisions", rg.smoothCollisions)
-
-#     if not rg.didFail and rg.smoothCollisions == 0:
-#         print("sending forward path")
-#         # writePath(forwardPath, "forward", seed)
-#         # await fps.send_trajectory(forwardPath, use_sync_line=True)
-#         try:
-#             await fps.send_trajectory(forwardPath, use_sync_line=use_sync_line)
-#             # await send_trajectory(fps, forwardPath, use_sync_line=True)
-#         except TrajectoryError as e:
-#             print("trajectory failed!!!!")
-#             writePath(forwardPath, "forward", seed)
-#             # note offending robots
-#             t = e.trajectory.failed_positioners
-#             with open("failed_positioners_forward_%i.txt"%seed, "w") as f:
-#                 f.write(str(t))
-#             print("failed on forward")
-#             print("unwinding grid")
-#             await unwindGrid(fps)
-#             return
-
-#         print("forward path done")
-
-#         await asyncio.sleep(1)
-
-#         print("robot escape")
-#         await separate(fps)
-#         print("escape done...unwinding")
-
-#         await unwindGrid(fps)
-
-#         # await fps.send_trajectory(reversePath, use_sync_line=True)
-#     else:
-#         print("not sending path")
 
 
 async def main():
@@ -866,8 +842,13 @@ async def main():
         print("done exploding")
 
     print("unwind")
-    await unwindGrid(fps)
+    unwindFail = await unwindGrid(fps)
     print("unwound")
+
+    if unwindFail:
+        print("not all positioners are unwound, exiting")
+        await fps.shutdown()
+        return
 
     if UNWINDONLY:
         await fps.shutdown()
