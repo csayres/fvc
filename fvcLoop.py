@@ -29,10 +29,10 @@ import matplotlib.pyplot as plt
 
 angStep = 0.1         # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
-collisionBuffer = 1.9    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
+collisionBuffer = 2    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.6
-EXPLODEFIRST = False
-UNWINDONLY = False
+EXPLODEFIRST = True
+UNWINDONLY = True
 LED_VALUE = 1
 SEED = 120
 escapeDeg = 20  # 20 degrees of motion to escape
@@ -448,10 +448,10 @@ async def unwindGrid(fps):
     print("smooth collisions", rg.smoothCollisions)
     # print(forwardPath)
     # print(reversePath)
-    if rg.didFail:
-        print("deadlock in unwind, not applying")
-    else:
-        await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
+    #if rg.didFail:
+        #print("deadlock in unwind, not applying")
+    #else:
+    await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
 
 
 def writePath(pathdict, direction, seed):
