@@ -34,16 +34,17 @@ exptime = 1.6
 EXPLODEFIRST = True
 UNWINDONLY = True
 FORCEUNWIND = False
-MET_LED_VALUE = 1
-AP_LED_VALUE = 50
-BOSS_LED_VALUE = 50
+LED12_VALUE = 1  # metrology
+LED3_VALUE = 16  # boss
+LED4_VALUE = 3  # apogee
+
 SEED = 120
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
-NITER = 10
+NITER = 1
 DOEXP = False
-SPEED = 2 #RPM at output
-LEFT_HAND = False
+SPEED = 2  # RPM at output
+LEFT_HAND = True
 DO_SAFE = False
 DO_MDP = True
 
@@ -768,8 +769,8 @@ async def outAndBack(fps, seed, safe=True):
 
         print("forward path done")
         if DOEXP:
-            await ledOn(fps, "led1")
-            await ledOn(fps, "led2")
+            await ledOn(fps, "led1", LED12_VALUE)
+            await ledOn(fps, "led2", LED12_VALUE)
             await asyncio.sleep(1)
             print("exposing img 1")
             filename = await exposeFVC(exptime)
@@ -777,22 +778,22 @@ async def outAndBack(fps, seed, safe=True):
 
             await ledOff(fps, "led1")
             await ledOff(fps, "led2")
-            await ledOn(fps, "led3")
+            await ledOn(fps, "led3", LED3_VALUE)
             await asyncio.sleep(1)
             print("exposing img 2")
             filename = await exposeFVC(exptime)
             await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
 
             await ledOff(fps, "led3")
-            await ledOn(fps, "led4")
+            await ledOn(fps, "led4", LED4_VALUE)
             await asyncio.sleep(1)
             print("exposing img 3")
             filename = await exposeFVC(exptime)
             await writeProcFITS(filename, fps, rg, seed, expectedTargCoords)
 
             await ledOff(fps, "led4")
-            await ledOn(fps, "led1")
-            await ledOn(fps, "led2")
+            await ledOn(fps, "led1", LED12_VALUE)
+            await ledOn(fps, "led2", LED12_VALUE)
             await asyncio.sleep(1)
             print("exposing img 4")
             filename = await exposeFVC(exptime)
