@@ -31,8 +31,8 @@ angStep = 0.1         # degrees per step in kaiju's rough path
 epsilon = angStep * 2   # max error (deg) allowed in kaiju's path simplification
 collisionBuffer = 2.4    # effective *radius* of beta arm in mm effective beta arm width is 2*collisionBuffer
 exptime = 1.6
-EXPLODEFIRST = True
-UNWINDONLY = True
+EXPLODEFIRST = False
+UNWINDONLY = False
 FORCEUNWIND = False
 LED12_VALUE = 1  # metrology
 LED3_VALUE = 16  # boss
@@ -41,12 +41,12 @@ LED4_VALUE = 3  # apogee
 SEED = 120
 escapeDeg = 20  # 20 degrees of motion to escape
 use_sync_line = False
-NITER = 1
-DOEXP = False
+NITER = 20
+DOEXP = True
 SPEED = 2  # RPM at output
-LEFT_HAND = True
-DO_SAFE = False
-DO_MDP = True
+LEFT_HAND = False
+DO_SAFE = True
+DO_MDP = False
 
 badRobots = [235, 1395, 278]
 
@@ -808,7 +808,6 @@ async def outAndBack(fps, seed, safe=True):
 
         print("sending reverse path")
         try:
-            print("dry run backward!!!")
             await fps.send_trajectory(reversePath, use_sync_line=use_sync_line)
         except TrajectoryError as e:
             print("trajectory failed!!!!")
