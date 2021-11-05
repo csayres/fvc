@@ -226,7 +226,7 @@ async def exposeFVC(exptime, stack=1):
     while True:
         data = await reader.readline()
         data = data.decode()
-        print("read from fvc:", data)
+        # print("read from fvc:", data)
         if "filename=" in data:
             filename = data.split(",")[-1].strip("\n")
         if "%i : "%cmdID in data:
@@ -754,6 +754,8 @@ async def outAndBack(fps, seed, safe=True):
 
     await ledOff(fps, "led1")
     await ledOff(fps, "led2")
+    await ledOff(fps, "led3")
+    await ledOff(fps, "led4")
     if not rg.didFail and rg.smoothCollisions == 0:
         forwardPath, reversePath = rg.getPathPair(speed=SPEED)
         print("sending forward path")
