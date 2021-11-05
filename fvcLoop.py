@@ -215,9 +215,9 @@ async def exposeFVC(exptime, stack=1):
     while True:
         data = await reader.readline()
         data = data.decode()
-        print(data)
+        # print(data)
         if "version=" in data:
-            print("break!")
+            # print("break!")
             break
 
     print(f'Send: %s'%cmdStr)
@@ -290,12 +290,18 @@ async def writeProcFITS(filePath, fps, rg, seed, expectedTargCoords, doProcess=T
         binTable = fits.BinTableHDU(rec, name=name)
         f.append(binTable)
 
+    binTable = fits.BinTableHDU(dataFrameToFitsRecord(expectedTargCoords), name="measured")
+    f.append(binTable)
+
+
     addHeaders = await getIEBData(fps)
     hdr = f[1].header
     for key, val in addHeaders.items():
         hdr[key] = val
 
     hdr["KAISEED"] = seed
+
+
 
     currPos = await updateCurrentPos(fps, rg, setKaiju=False)
     _cmdAlpha = []
@@ -399,7 +405,7 @@ async def updateCurrentPos(fps, rg, setKaiju=True):
     if setKaiju:
         for r in rg.robotDict.values():
             if rg.isCollided(r.id):
-                print("robot ", r.id, " is collided")
+                print("robot ", r.id, " is kaiju collided")
 
     currPos = pd.DataFrame(
         {
