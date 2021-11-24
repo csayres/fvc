@@ -299,6 +299,7 @@ def positionerToWok(
         dx=None, dy=None #, dz=None
     ):
     posRow = positionerTable[positionerTable.positionerID == positionerID]
+    # print(posRow)
     assert len(posRow) == 1
 
 
@@ -352,6 +353,7 @@ def positionerToWok(
 def solveImage(imgFile, guessTransform, zb=True, plot=False):
     global xyCMM
     print("using %i points for fiducial transform"%len(xyCMM))
+    print("imgFile", imgFile)
     # associate fiducials and fit
     # transfrom
     imgData = fitsio.read(imgFile)
@@ -388,6 +390,7 @@ def solveImage(imgFile, guessTransform, zb=True, plot=False):
     cmdBeta = pc["cmdBeta"]
     # cmdAlpha = pc["alphaReport"]
     # cmdBeta = pc["betaReport"]
+    # print("\n\n", cmdAlpha, "\n\n")
     positionerID = pc["positionerID"]
 
     xExpectPos = []
@@ -898,25 +901,39 @@ def initialFiducialTransform():
 
     dfList = []
 
-    for img in glob.glob("apoFullImg/59518/proc*.fits"):
+
+    for img in sorted(glob.glob("apoFullImg/59520/proc*.fits")): # full range calib
+    # for img in glob.glob("apoFullImg/59518/proc*.fits"): # safe image calib
         print("on img", img)
         dfList.append(solveImage(img, firstGuessTF, zb=True, plot=False))
 
     dfList = pandas.concat(dfList)
 
-    dfList.to_csv("apoFullMeasSafe.csv", index=False)
+    dfList.to_csv("apoFullMeasNotSafe.csv", index=False)
+
+
     # return firstGuessTF
 
 
 if __name__ == "__main__":
+    # be sure to set the right calibration environment before running!
+
+
     # medianCombine()
     # initialFiducialTransform()
     # medianCombine()
     #organize(utahBasePath)
     # compileMetrology(multiprocess=True, plot=False) # plot isn't working?
-    # initialFiducialTransform()
-    # calibrateRobots(inFile="apoFullMeasSafe.csv", outfileName="positionerTableAPOSafe.csv")
-    plotCalibResults(removeOutliers=False)
+
+    # organize(laptopBasePath) # run this only for duPont, produces medianImg.fits for duPontSparse
+    # medianCombine() # produces medianImg.fits for apoFull
+
+    initialFiducialTransform()
+
+    # calibrateRobots(inFile="apoFullMeasNotSafe.csv", outfileName="positionerTableAPONotSafe.csv") # use this for apoFull
+    # calibrateRobots() # use this for duPont sparse
+
+    # plotCalibResults(removeOutliers=False)
     plt.show()
 
 """
