@@ -24,9 +24,11 @@ import seaborn as sns
 # get default tables, any image will do, they're all the same
 # ff = fits.open(glob.glob("duPontSparseImg/59499/proc*.fits")[10])
 # positionerTable = ff[2].data  # was an error in mapping for 1033, instead use coordio
-positionerTable = coordio.defaults.positionerTable
-wokCoords = coordio.defaults.wokCoords
-fiducialCoords = coordio.defaults.fiducialCoords
+positionerTable = coordio.defaults.calibration.positionerTable
+wokCoords = coordio.defaults.calibration.wokCoords
+fiducialCoords = coordio.defaults.calibration.fiducialCoords
+
+posWokCoords = pandas.merge(positionerTable, wokCoords, on="holeID").reset_index()
 
 # wokCoords = ff[3].data
 # fiducialCoords = pandas.DataFrame(ff[4].data)
@@ -298,7 +300,8 @@ def positionerToWok(
         alphaOffDeg=None, betaOffDeg=None,
         dx=None, dy=None #, dz=None
     ):
-    posRow = positionerTable[positionerTable.positionerID == positionerID]
+
+    posRow = posWokCoords[posWokCoords.positionerID == positionerID]
     # print(posRow)
     assert len(posRow) == 1
 
@@ -332,13 +335,13 @@ def positionerToWok(
 
 
     # import pdb; pdb.set_trace()
-    wokRow = wokCoords[wokCoords.holeID == posRow.holeID.values[0]]
+    # wokRow = wokCoords[wokCoords.holeID == posRow.holeID.values[0]]
 
-    b = numpy.array([wokRow.xWok, wokRow.yWok, wokRow.zWok])
+    b = numpy.array([posRow.xWok, posRow.yWok, posRow.zWok])
 
-    iHat = numpy.array([wokRow.ix, wokRow.iy, wokRow.iz])
-    jHat = numpy.array([wokRow.jx, wokRow.jy, wokRow.jz])
-    kHat = numpy.array([wokRow.kx, wokRow.ky, wokRow.kz])
+    iHat = numpy.array([posRow.ix, posRow.iy, posRow.iz])
+    jHat = numpy.array([posRow.jx, posRow.jy, posRow.jz])
+    kHat = numpy.array([posRow.kx, posRow.ky, posRow.kz])
 
     xw, yw, zw = coordio.conv.tangentToWok(
         xt, yt, zt, b, iHat, jHat, kHat,
@@ -524,15 +527,21 @@ def minimizeMe(x, robotID, alpha, beta, xWok, yWok):
     return numpy.sum(dist)
 
 
-def fitOneRobot(rID):
+def fitOneRobot(rID, csvFile):
     # turn this into an object w/ attrs
     # !!!!!!!!! warning hack!!!!
-    df = pandas.read_csv("apoFullMeasSafe.csv")
+    # df = pandas.read_csv("apoSafe20111126.csv")
+    df = pandas.read_csv(csvFile)
     dfR = df[df.robotID==rID]
     xExpect = dfR.xWokExpect.to_numpy()
     yExpect = dfR.yWokExpect.to_numpy()
     xMeas = dfR.xWokMeas.to_numpy()
     yMeas = dfR.yWokMeas.to_numpy()
+
+    # print("len alphas", len(dfR.cmdAlpha))
+    # plt.hist(dfR.cmdAlpha)
+    # plt.show()
+    # import pdb; pdb.set_trace()
 
     #minimize
     x0 = numpy.array([
@@ -564,13 +573,22 @@ def fitOneRobot(rID):
 #         calibs.append(fitOneRobot(rID))
 
 
-def calibrateRobots(inFile="duPontSparseMeas.csv", outfileName="positionerTableCalib.csv"):
+def calibrateRobots(inFile, outfileName, calibResultsFileName):
     # multiprocess version
     df = pandas.read_csv(inFile)
+
     robotIDs = set(df.robotID)
+
+    _fitOneRobot = partial(fitOneRobot, csvFile=inFile)
+
+    # out = []
+    # for robotID in robotIDs:
+    #     out.append(fitOneRobot(robotID))
+
     p = Pool(cpu_count()-1)
-    out = p.map(fitOneRobot, robotIDs)
+    out = p.map(_fitOneRobot, robotIDs)
     p.close()
+
     xm = []
     ym = []
     _dx = []
@@ -580,7 +598,8 @@ def calibrateRobots(inFile="duPontSparseMeas.csv", outfileName="positionerTableC
     _dxNC = []
     _dyNC = []
 
-    npt = positionerTable.copy()
+    npt = positionerTable.copy().reset_index()
+
     # convert datatypes
     npt["metY"] = npt["metY"].astype(float)
     npt["alphaOffset"] = npt["alphaOffset"].astype(float)
@@ -624,9 +643,10 @@ def calibrateRobots(inFile="duPontSparseMeas.csv", outfileName="positionerTableC
         # plt.hist(errs*1000)
         # plt.show()
 
+    # import pdb; pdb.set_trace()
 
     # drop unnamed columns
-    npt = npt.loc[:, ~npt.columns.str.contains('^Unnamed')]
+    # npt = npt.loc[:, ~npt.columns.str.contains('^Unnamed')]
     npt.to_csv(outfileName)
 
     xm = numpy.array(xm).flatten()
@@ -649,10 +669,11 @@ def calibrateRobots(inFile="duPontSparseMeas.csv", outfileName="positionerTableC
         "robotID": _robots
     })
 
-    df.to_csv("calibResults.csv")
+    df.to_csv(calibResultsFileName)
 
-def plotCalibResults(removeOutliers=False):
-    df = pandas.read_csv("calibResults.csv")
+
+def plotCalibResults(calibResultsFile, removeOutliers=False):
+    df = pandas.read_csv(calibResultsFile)
 
     # plot non calibrated quiver
 
@@ -661,7 +682,7 @@ def plotCalibResults(removeOutliers=False):
         df = df[df.umErr < 200]
 
     plt.figure(figsize=(9, 9))
-    plt.title("before robot calibration applied")
+    plt.title("uncalibrated robot")
     Q = plt.quiver(df.xMeas, df.yMeas, df.dxNC, df.dyNC, scale=20, angles="xy")
     plt.quiverkey(Q, X=0.3, Y=1.1, U=2,
                  label='Quiver key, length = 2 mm', labelpos='E')
@@ -671,31 +692,38 @@ def plotCalibResults(removeOutliers=False):
 
 
     plt.figure(figsize=(9, 9))
-    plt.title("after robot calibration applied")
+    plt.title("calibrated robot")
     Q = plt.quiver(df.xMeas, df.yMeas, df.dx, df.dy, scale=2, angles="xy")
 
-    plt.quiverkey(Q, X=0.3, Y=1.1, U=0.050,
-                 label='Quiver key, length = 50 microns', labelpos='E')
+    plt.quiverkey(Q, X=0.3, Y=1.1, U=0.010,
+                 label='Quiver key, length = 10 microns', labelpos='E')
     plt.xlabel("wok x (mm)")
     plt.ylabel("wok y (mm)")
     plt.savefig("quiverFit.png", dpi=350)
 
 
+    plt.figure(figsize=(10, 5))
+    plt.title("Calibrated Blind Move Error")
+    sns.boxplot(x="robotID", y="umErr", data=df)
+    plt.xticks(rotation=45)
+    # plt.ylim([0,300])
+    # plt.savefig("group%i.png"%ii, dpi=350)
+    # plt.close()
 
-    for ii, _df in enumerate(numpy.split(df,20)):
-        plt.figure(figsize=(10, 5))
-        plt.title("Calibrated Blind Move Error")
-        sns.boxplot(x="robotID", y="umErr", data=_df)
-        plt.xticks(rotation=45)
-        plt.ylim([0,300])
-        plt.savefig("group%i.png"%ii, dpi=350)
-        plt.close()
+    # for ii, _df in enumerate(numpy.split(df,20)):
+    #     plt.figure(figsize=(10, 5))
+    #     plt.title("Calibrated Blind Move Error")
+    #     sns.boxplot(x="robotID", y="umErr", data=_df)
+    #     plt.xticks(rotation=45)
+    #     plt.ylim([0,300])
+    #     plt.savefig("group%i.png"%ii, dpi=350)
+    #     plt.close()
     # plt.savefig("fitStatsZoom.png", dpi=250)
 
 
 
-def medianCombine():
-    imgFiles = glob.glob("apoFullImg/59518/proc*.fits")
+def medianCombine(imgFiles, doMean=False):
+    # imgFiles = glob.glob("apoFullImg/59518/proc*.fits")
     # f = fits.open(imgFiles[0])
     d = fitsio.read(imgFiles[0])
     s = d.shape
@@ -703,16 +731,17 @@ def medianCombine():
     nPix = len(d.flatten())
     nImg = len(imgFiles)
     medArr = numpy.zeros((nImg,nPix))
-    for ii, imgFile in enumerate(imgFiles[:30]):
+    for ii, imgFile in enumerate(imgFiles):
         d = fitsio.read(imgFile)
         medArr[ii,:] = d.flatten()
 
-    medArr = numpy.median(medArr, axis=0)
+    if doMean:
+        medArr = numpy.mean(medArr, axis=0)
+    else:
+        medArr = numpy.median(medArr, axis=0)
+
     medArr = medArr.reshape(s)
-    plt.figure()
-    plt.imshow(equalize_hist(medArr), origin="lower")
-    plt.show()
-    print("medArr shape", medArr.shape)
+
     # plt.figure()
     # plt.imshow(equalize_hist(d), origin="lower")
     # plt.xlim([10,20])
@@ -727,6 +756,7 @@ def medianCombine():
     hdu = fits.PrimaryHDU(medArr)
     hdu.writeto("medianImg.fits", overwrite=True)
     # fitsio.write("medianImg.fits", medArr)
+
 
 def extract(imgData):
     # run source extractor,
@@ -775,15 +805,19 @@ def argNearestNeighbor(xyA, xyB):
 
     return numpy.array(out), numpy.array(distance)
 
-def initialFiducialTransform():
+def initialFiducialTransform(keepThresh=None, fiducialTableFilename=None):
+    # saved from earlier
     global xyCMM
     imgData = fitsio.read("medianImg.fits")
     # plt.figure()
     # plt.imshow(equalize_hist(imgData), origin="lower")
     # plt.show()
     centroids = extract(imgData)
+    centroids = centroids[centroids.npix > 2000]
     print("n centroids", len(centroids))
     print("n cmm", len(xCMM))
+    print("total fiducials: ", 60)
+
     xyCCD = centroids[["x", "y"]].to_numpy()
 
     rt = RoughTransform(xyCCD, xyCMM)
@@ -797,15 +831,6 @@ def initialFiducialTransform():
     xyFiducialCCD = xyCCD[argFound]
     xyFiducialWokRough = xyWokRough[argFound]
 
-    # for debugging?
-    dd = {}
-    dd["xCCD"] = xyFiducialCCD[:,0]
-    dd["yCCD"] = xyFiducialCCD[:,1]
-    dd["roughWokX"] = xyFiducialWokRough[:,0]
-    dd["roughWokY"] = xyFiducialWokRough[:,1]
-    df = pandas.DataFrame(dd)
-    df.to_csv("forjose.csv")
-
 
     plt.figure(figsize=(8,8))
     plt.title("rough fiducial association")
@@ -818,16 +843,11 @@ def initialFiducialTransform():
     plt.axis("equal")
     plt.legend()
     plt.savefig("roughassoc.png", dpi=350)
-    plt.close()
 
     firstGuessTF = FullTransform(xyFiducialCCD, xyCMM)
     print("full trans 1 bias, unbias", firstGuessTF.rms*1000, firstGuessTF.unbiasedRMS*1000)
     xyWokMeas = firstGuessTF.apply(xyFiducialCCD, zb=True)
 
-    # print("xyCMM")
-    # for x, y in xyCMM:
-    #     print("%.3f  %.3f"%(x,y))
-    # print(xyCMM)
 
     plt.figure(figsize=(8,8))
     plt.title("full transform 1")
@@ -836,11 +856,11 @@ def initialFiducialTransform():
     # overplot fiducials
     plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
     plt.axis("equal")
+    plt.title("outlier include")
     plt.legend()
     plt.xlim([-350, 350])
     plt.ylim([-350,350])
     plt.savefig("full.png", dpi=350)
-    plt.close()
 
     dxy = xyCMM - xyWokMeas
 
@@ -851,23 +871,13 @@ def initialFiducialTransform():
     plt.figure()
     plt.quiver(xyCMM[:,0], xyCMM[:,1], dxy[:,0], dxy[:,1], angles="xy")
     plt.axis("equal")
+    plt.title("outlier include")
     plt.savefig("fiducialquiver.png", dpi=350)
-
-    # gridPts = []
-    # for gridX in numpy.linspace(numpy.min(xyCCD[:,0]), numpy.max(xyCCD[:,0]), 500):
-    #     for gridY in numpy.linspace(numpy.min(xyCCD[:,1]), numpy.max(xyCCD[:,1]), 500):
-    #         gridPts.append([gridX, gridY])
-
-    # plt.figure()
-    # gridPts = numpy.array(gridPts)
-    # warpPts = ft.apply(gridPts, zb=True)
-    # plt.plot(warpPts[:,0], warpPts[:,1], '.k', ms=10, alpha=0.2)
 
     # plt.show()
 
     # ignor errors > 100 micron and refit
 
-    keepThresh = None
     if keepThresh is not None:
         keep = numpy.linalg.norm(dxy, axis=1)*1000 < keepThresh
         ft = FullTransform(xyFiducialCCD[keep,:], xyCMM[keep,:])
@@ -875,17 +885,101 @@ def initialFiducialTransform():
         xyCMM = xyCMM[keep,:]
         xyWokMeas = ft.apply(xyFiducialCCD[keep,:], zb=True)
 
+    # apply this transform to all found fiducials, create a new table
+    plt.figure(figsize=(8,8))
+    plt.title("full transform 1")
+    plt.plot(xyWokMeas[:,0], xyWokMeas[:,1], 'o', ms=4, markerfacecolor="None", markeredgecolor="red", markeredgewidth=1, label="centroid")
+    #plt.plot(expectedTargCoords.xWokMetExpect.to_numpy(), expectedTargCoords.yWokMetExpect.to_numpy(), 'xk', ms=3, label="expected met")
+    # overplot fiducials
+    plt.plot(xCMM, yCMM, "D", ms=6, markerfacecolor="None", markeredgecolor="cornflowerblue", markeredgewidth=1, label="expected fid")
+    plt.title("outlier remove")
+    plt.axis("equal")
+    plt.legend()
+    plt.xlim([-350, 350])
+    plt.ylim([-350,350])
+
+    dxy = xyCMM - xyWokMeas
+
+    plt.figure()
+    plt.hist(numpy.linalg.norm(dxy,axis=1)*1000)
+
+    plt.figure()
+    plt.quiver(xyCMM[:,0], xyCMM[:,1], dxy[:,0], dxy[:,1], angles="xy")
+    plt.title("outlier remove")
+    plt.axis("equal")
+
+    # import pdb; pdb.set_trace()
+    # finally write a new fiducial table if indicated
+    if fiducialTableFilename is not None:
+        # convert all CCD detections and assume they're fiducials
+        assert len(xyCCD) == 60 # there should be 60 fiducials (including GFAs)
+        xyWokMeas = ft.apply(xyCCD, zb=True)
+        nfw = fiducialCoords.copy().reset_index()
+
+        xyWokOld = nfw[["xWok", "yWok"]].to_numpy()
+
+        thetaMeas = numpy.degrees(numpy.arctan2(xyWokMeas[:,1], xyWokMeas[:,0]))
+        thetaMeas = thetaMeas % 360
+
+
+        argFound, distance = argNearestNeighbor(xyWokOld, xyWokMeas)
+        xyNew = xyWokMeas[argFound, :]
+
+        nfw["xWok"] = xyNew[:,0]
+        nfw["yWok"] = xyNew[:,1]
+
+        # next find fiducials not in table (these will be GFAs)
+        indNotFound = list(set(list(range(60))) - set(argFound))
+        # in order of increasing theta
+        missingFiducialNames = ["F9", "F8", "F6", "F5", "F3", "F2", "F18", "F17", "F15", "F14", "F12", "F11"]
+
+        outerFMeas = xyWokMeas[indNotFound, :]
+        thetaMeas = numpy.degrees(numpy.arctan2(outerFMeas[:,1], outerFMeas[:,0]))
+        thetaMeas = thetaMeas % 360
+        asort = numpy.argsort(thetaMeas)
+        outerFMeas = outerFMeas[asort,:]
+
+        newFdf = pandas.DataFrame({
+            "site": ["APO"] * len(asort),
+            "id": ["F?"] * len(asort),
+            "xWok": outerFMeas[:,0],
+            "yWok": outerFMeas[:,1],
+            "zWok": [143.1] * len(asort),
+            "holeID": missingFiducialNames,
+            "col": [numpy.nan] * len(asort),
+            "row": [numpy.nan] * len(asort)
+        })
+
+        nfw = pandas.concat([nfw, newFdf], ignore_index=True)
+        # nfw = nfw.reset_index()
+
+
+        plt.figure()
+        text = nfw.holeID
+        for ii, (xx, yy) in enumerate(nfw[["xWok", "yWok"]].to_numpy()):
+            plt.text(xx,yy,text[ii])
+        plt.plot(0,0,'xr')
+        plt.xlim([-350, 350])
+        plt.ylim([-350, 350])
+
+        nfw.to_csv(fiducialTableFilename)
+
+
+
+
+
+
     # fiducial fit
-    d = {}
-    d["xCMM"] = xyCMM[:,0]
-    d["yCMM"] = xyCMM[:,1]
-    d["xMeas"] = xyWokMeas[:,0]
-    d["yMeas"] = xyWokMeas[:,1]
-    d["dx"] = xyCMM[:,0] - xyWokMeas[:,0]
-    d["dy"] = xyCMM[:,1] - xyWokMeas[:,1]
-    d["keepThresh"] = [keepThresh]*len(xyCMM[:,0])
-    df = pandas.DataFrame(d)
-    df.to_csv("fiducialFit.csv")
+    # d = {}
+    # d["xCMM"] = xyCMM[:,0]
+    # d["yCMM"] = xyCMM[:,1]
+    # d["xMeas"] = xyWokMeas[:,0]
+    # d["yMeas"] = xyWokMeas[:,1]
+    # d["dx"] = xyCMM[:,0] - xyWokMeas[:,0]
+    # d["dy"] = xyCMM[:,1] - xyWokMeas[:,1]
+    # d["keepThresh"] = [keepThresh]*len(xyCMM[:,0])
+    # df = pandas.DataFrame(d)
+    # df.to_csv("fiducialFit.csv")
 
 
     # dxy = xyCMM - xyWokMeas
@@ -899,26 +993,198 @@ def initialFiducialTransform():
     # plt.show()
 
 
+    # dfList = []
+
+
+    # for img in sorted(glob.glob("apoFullImg/59520/proc*.fits")): # full range calib
+    # # for img in glob.glob("apoFullImg/59518/proc*.fits"): # safe image calib
+    #     print("on img", img)
+    #     dfList.append(solveImage(img, firstGuessTF, zb=True, plot=False))
+
+    # dfList = pandas.concat(dfList)
+
+    # dfList.to_csv("apoFullMeasNotSafe.csv", index=False)
+
+
+# return firstGuessTF
+def generateFullMeasTable(procImgList):
     dfList = []
+    for imgName in procImgList:
+
+        f = fitsio.FITS(imgName)
+
+        # import pdb; pdb.set_trace()
+
+        # f = fits.open(imgName)
+        measArray = f[5].read()
+
+        keep = measArray["fibre_type"] == "Metrology"
+
+        dfMeas = pandas.DataFrame(
+            {
+            "robotID": measArray["positioner_id"].byteswap().newbyteorder()[keep],
+            "holeID": measArray["hole_id"].byteswap().newbyteorder()[keep],
+            "xWokMeas": measArray["xwok_measured"].byteswap().newbyteorder()[keep],
+            "yWokMeas": measArray["ywok_measured"].byteswap().newbyteorder()[keep],
+            "xWokExpect": measArray["xwok"].byteswap().newbyteorder()[keep],
+            "yWokExpect": measArray["ywok"].byteswap().newbyteorder()[keep],
+            "fibre_type": measArray["fibre_type"].byteswap().newbyteorder()[keep]
+            }
+        )
+
+        dfMeas["imgFile"] = [imgName] * len(dfMeas)
+        dfMeas.reset_index(inplace=True)
+
+        cmdArray = f[6].read()
+        dfCmd = pandas.DataFrame({
+            "robotID": cmdArray["positionerID"].byteswap().newbyteorder(),
+            "cmdAlpha": cmdArray["alphaReport"].byteswap().newbyteorder(),
+            "cmdBeta": cmdArray["betaReport"].byteswap().newbyteorder(),
+
+        })
 
 
-    for img in sorted(glob.glob("apoFullImg/59520/proc*.fits")): # full range calib
-    # for img in glob.glob("apoFullImg/59518/proc*.fits"): # safe image calib
-        print("on img", img)
-        dfList.append(solveImage(img, firstGuessTF, zb=True, plot=False))
+        dfOut = dfMeas.merge(dfCmd, on="robotID")
 
-    dfList = pandas.concat(dfList)
+        dfOut = dfOut.drop(columns="index")
+        dfList.append(dfOut)
 
-    dfList.to_csv("apoFullMeasNotSafe.csv", index=False)
+    return pandas.concat(dfList).reset_index()
+
+        # import pdb; pdb.set_trace()
 
 
-    # return firstGuessTF
+
+    #         return pandas.DataFrame(
+    #     {
+    #         "robotID": positionerID,
+    #         "cmdAlpha": cmdAlpha,
+    #         "cmdBeta": cmdBeta,
+    #         "xWokMeas": xyWokRobotMeas[:, 0],
+    #         "yWokMeas": xyWokRobotMeas[:, 1],
+    #         "xWokExpect": xExpectPos,
+    #         "yWokExpect": yExpectPos,
+    #         "imgFile": [imgFile]*len(positionerID),
+    #     }
+    # )
+
+def plotPositionerTable(infile):
+    df = pandas.read_csv(infile)
+    df = pandas.merge(df, wokCoords, on="holeID").reset_index()
+
+    mdx = numpy.mean(df.dx)
+    mdy = numpy.mean(df.dy)
+
+    plt.figure()
+    plt.hist(df.dx)
+    plt.title("dx")
+
+    plt.figure()
+    plt.hist(df.dy)
+    plt.title("dy")
+
+    plt.figure()
+    plt.hist(df.dx - mdx)
+    plt.title("dx - <dx>")
+
+    plt.figure()
+    plt.hist(df.dy - mdy)
+    plt.title("dy - <dy>")
+
+    plt.figure()
+    plt.quiver(df.xWok, df.yWok, df.dx, df.dy, angles="xy")
+    plt.title("positioner base offsets")
+    plt.xlabel("x wok")
+    plt.ylabel("y wok")
+
+    plt.figure()
+    plt.quiver(df.xWok, df.yWok, df.dx - mdx, df.dy - mdy, angles="xy")
+    plt.title("mean subtracted positioner base offsets")
+    plt.xlabel("x wok")
+    plt.ylabel("y wok")
+
+
+def safeMoveAnalysis(recompute=True):
+    # from 2021-11-26 wok in plug lab
+
+    imgRange = [2, 81]
+    imgPaths = []
+    for imgNum in range(imgRange[0], imgRange[1]+1):
+        zf = ("%i"%imgNum).zfill(4)
+        imgPath = "/Volumes/futa/apo/data/fcam/59544/proc-fimg-fvc2n-%s.fits"%zf
+        imgPaths.append(imgPath)
+
+
+    # determine median-combined fiducial locations
+
+
+    if recompute:
+        # tstart = time.time()
+        # medianCombine(imgPaths, doMean=False)
+        # print("median combine took %.1f"%(time.time()-tstart))
+        fullMeasTable = generateFullMeasTable(imgPaths)
+        fullMeasTable.to_csv("apoSafe20111127.csv")
+        calibrateRobots(inFile="apoSafe20111127.csv", outfileName="positionerTableSafe20111127.csv", calibResultsFileName="calibSafe20111127.csv")
+
+
+
+    # plot median img
+    # medImg = fitsio.read("medianImg.fits")
+    # plt.figure()
+    # plt.imshow(medImg, origin="lower")
+    # plt.figure()
+    # plt.imshow(equalize_hist(medImg), origin="lower")
+
+    # calculate new fiducial locations
+    # initialFiducialTransform(keepThresh=120, fiducialTableFilename="fiducialCoords20111127.csv")  # throw out 120 micron outliers
+
+    plotCalibResults("calibSafe20111127.csv")
+
+    plotPositionerTable("positionerTableSafe20111127.csv")
+
+    plt.show()
+
+
+def dangerMoveAnalysis(recompute=True):
+    # from 2021-11-28 wok in plug lab
+
+    imgRange = [2, 233]
+    imgPaths = []
+    for imgNum in range(imgRange[0], imgRange[1]+1):
+        # image 7 doesn't exist
+        if imgNum == 7:
+            continue
+        zf = ("%i"%imgNum).zfill(4)
+        imgPath = "/Volumes/futa/apo/data/fcam/59546/proc-fimg-fvc2n-%s.fits"%zf
+        imgPaths.append(imgPath)
+
+
+    # determine median-combined fiducial locations
+
+
+    if recompute:
+
+        fullMeasTable = generateFullMeasTable(imgPaths)
+        fullMeasTable.to_csv("apoDanger20111128.csv")
+        calibrateRobots(inFile="apoDanger20111128.csv", outfileName="positionerTableDanger20111128.csv", calibResultsFileName="calibDanger20111128.csv")
+
+    # calculate new fiducial locations
+    # initialFiducialTransform(keepThresh=120, fiducialTableFilename="fiducialCoords20111127.csv")  # throw out 120 micron outliers
+
+    plotCalibResults("calibDanger20111128.csv")
+
+    plotPositionerTable("positionerTableDanger20111128.csv")
+
+    plt.show()
 
 
 if __name__ == "__main__":
     # be sure to set the right calibration environment before running!
 
+    # safeMoveAnalysis(True)
+    dangerMoveAnalysis(False)
 
+    ########### old
     # medianCombine()
     # initialFiducialTransform()
     # medianCombine()
@@ -928,13 +1194,13 @@ if __name__ == "__main__":
     # organize(laptopBasePath) # run this only for duPont, produces medianImg.fits for duPontSparse
     # medianCombine() # produces medianImg.fits for apoFull
 
-    initialFiducialTransform()
+    # initialFiducialTransform()
 
     # calibrateRobots(inFile="apoFullMeasNotSafe.csv", outfileName="positionerTableAPONotSafe.csv") # use this for apoFull
     # calibrateRobots() # use this for duPont sparse
 
     # plotCalibResults(removeOutliers=False)
-    plt.show()
+    # plt.show()
 
 """
 process:
